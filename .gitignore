@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+_site/
+docs/data/
+.env
+*.session.json
