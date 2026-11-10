@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark light">
   <title>CANNJudge 实时排名监视器</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <div class="ambient" aria-hidden="true"></div>
@@ -79,64 +79,66 @@
       <span class="strip-hint">按 <kbd>/</kbd> 搜索队伍</span>
     </section>
 
-    <section class="panel" id="totalPanel" aria-label="总排行榜">
-      <div class="panel-head">
-        <div class="panel-title">
-          <h2>总排行榜</h2>
-          <p id="totalMeta">–</p>
+    <div class="rankings-layout">
+      <section class="panel" id="totalPanel" aria-label="总排行榜">
+        <div class="panel-head">
+          <div class="panel-title">
+            <h2>总排行榜</h2>
+            <p id="totalMeta">–</p>
+          </div>
+          <div class="panel-tools">
+            <label class="search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
+              <input id="searchInput" type="search" placeholder="搜索队伍，按 / 聚焦" autocomplete="off" spellcheck="false">
+            </label>
+          </div>
         </div>
-        <div class="panel-tools">
-          <label class="search">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
-            <input id="searchInput" type="search" placeholder="搜索队伍，按 / 聚焦" autocomplete="off" spellcheck="false">
-          </label>
+        <div class="table-scroll tall" id="totalScroll">
+          <table class="rank-table">
+            <thead>
+              <tr>
+                <th class="col-rank">排名</th>
+                <th>队伍</th>
+                <th class="num col-pass">通过</th>
+                <th class="num">总分</th>
+                <th class="num col-delta">较 5 小时前</th>
+                <th class="num col-attempt">尝试</th>
+                <th class="num col-subs">提交</th>
+              </tr>
+            </thead>
+            <tbody id="totalBody">
+              <tr><td colspan="7" class="empty">正在加载总排行榜…</td></tr>
+            </tbody>
+          </table>
         </div>
-      </div>
-      <div class="table-scroll tall" id="totalScroll">
-        <table class="rank-table">
-          <thead>
-            <tr>
-              <th class="col-rank">排名</th>
-              <th>队伍</th>
-              <th class="num col-pass">通过</th>
-              <th class="num">总分</th>
-              <th class="num col-delta">较 5 小时前</th>
-              <th class="num col-attempt">尝试</th>
-              <th class="num col-subs">提交</th>
-            </tr>
-          </thead>
-          <tbody id="totalBody">
-            <tr><td colspan="7" class="empty">正在加载总排行榜…</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="panel-foot" id="totalFoot">–</div>
-    </section>
+        <div class="panel-foot" id="totalFoot">–</div>
+      </section>
 
-    <section class="panel" aria-labelledby="replayTitle">
-      <div class="panel-head">
-        <div class="panel-title">
-          <h2 id="replayTitle">历史峰值回放</h2>
-          <p id="replayMeta">正在读取公开成绩样本…</p>
+      <section class="panel" aria-labelledby="replayTitle">
+        <div class="panel-head">
+          <div class="panel-title">
+            <h2 id="replayTitle">历史峰值回放</h2>
+            <p id="replayMeta">正在读取公开成绩样本…</p>
+          </div>
         </div>
-      </div>
-      <div class="table-scroll tall replay-scroll" id="replayTable" hidden>
-        <table class="rank-table">
-          <thead>
-            <tr>
-              <th scope="col">回放名次</th>
-              <th scope="col">队伍</th>
-              <th scope="col" class="num">当前总分</th>
-              <th scope="col" class="num">回放总分</th>
-              <th scope="col">已观测回退</th>
-              <th scope="col">单题反超门槛</th>
-            </tr>
-          </thead>
-          <tbody id="replayBody"></tbody>
-        </table>
-      </div>
-      <div class="panel-foot">回放保留查询队伍的当前提交，其余队伍逐题取公开峰值并重算第一名奖励。口径与分数会随采样变化。未公开的成绩无法估算。</div>
-    </section>
+        <div class="table-scroll tall replay-scroll" id="replayTable" hidden>
+          <table class="rank-table">
+            <thead>
+              <tr>
+                <th scope="col" class="col-rank">回放名次</th>
+                <th scope="col">队伍</th>
+                <th scope="col" class="num">当前总分</th>
+                <th scope="col" class="num">回放总分</th>
+                <th scope="col" class="col-replay-drop">已观测回退</th>
+                <th scope="col" class="col-replay-threshold">单题反超门槛</th>
+              </tr>
+            </thead>
+            <tbody id="replayBody"></tbody>
+          </table>
+        </div>
+        <div class="panel-foot">回放保留查询队伍的当前提交，其余队伍逐题取公开峰值并重算第一名奖励。口径与分数会随采样变化。未公开的成绩无法估算。</div>
+      </section>
+    </div>
 
     <section class="panel" aria-labelledby="historyTitle">
       <div class="panel-head">
@@ -179,6 +181,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="config.js?v=4"></script>
-  <script type="module" src="app.js?v=5"></script>
+  <script type="module" src="app.js?v=6"></script>
 </body>
 </html>

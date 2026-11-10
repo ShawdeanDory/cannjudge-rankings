@@ -568,6 +568,14 @@ a:hover { text-decoration: underline; }
 .replay-scroll ul { margin: 5px 0; padding-left: 1.2em; white-space: normal; }
 .replay-scroll li small { display: block; color: var(--muted); }
 
+.rankings-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.rankings-layout > .panel { min-width: 0; }
+
 .panel-foot {
   padding: 10px 22px 14px;
   font-size: 12px;
@@ -753,6 +761,23 @@ a:hover { text-decoration: underline; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 /* ---------- 响应式 ---------- */
+@media (min-width: 1160px) {
+  .rankings-layout { grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.04fr); }
+  .rankings-layout .panel-head { min-height: 94px; padding-inline: 16px; gap: 12px; }
+  .rankings-layout .search input { width: clamp(110px, 11vw, 160px); }
+  .rankings-layout .rank-table { table-layout: fixed; }
+  .rankings-layout .rank-table :is(th, td) { padding-inline: 9px; }
+  #totalScroll .col-rank { width: 56px; }
+  #totalScroll th.num { width: 58px; }
+  #totalScroll th.col-delta { width: 88px; }
+  #totalScroll .team-name { min-width: 0; max-width: 100%; }
+  #replayTable .col-rank { width: 70px; }
+  #replayTable th.num { width: 72px; }
+  #replayTable .col-replay-drop { width: 88px; }
+  #replayTable .col-replay-threshold { width: 132px; }
+  #replayTable :is(td:nth-child(2), details) { white-space: normal; overflow-wrap: anywhere; }
+}
+
 @media (max-width: 1180px) {
   .hero { grid-template-columns: 1fr; gap: 18px; }
   .hero-side-hint { display: none; }

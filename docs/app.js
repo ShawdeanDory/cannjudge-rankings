@@ -16,6 +16,7 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
   const STATIC_POLL_MS = 60000;
   const scoreArchive = createArchive();
   let archiveReady;
+  let sharedArchiveAt = 0;
 
   const state = {
     mode: 'unknown',
@@ -564,8 +565,12 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
   async function loadScoreArchive() {
     try { mergeArchive(scoreArchive, JSON.parse(localStorage.getItem(STORE_PEAKS))); } catch { /* optional storage */ }
     try {
-      const response = await fetch('score-peaks.json', { signal: AbortSignal.timeout(8000) });
-      if (response.ok) mergeArchive(scoreArchive, await response.json());
+      const response = await fetch('score-peaks.json', { cache: 'no-cache', signal: AbortSignal.timeout(8000) });
+      if (response.ok) {
+        const shared = await response.json();
+        mergeArchive(scoreArchive, shared);
+        sharedArchiveAt = shared.latestAt;
+      }
     } catch { /* continue with observed browser samples */ }
   }
 
@@ -584,6 +589,7 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
       .map(at => fmtDayTime(at * 1000)).join(' 至 ');
     const result = selected ? `${selected.team} 公开 #${selected.rank} · 回放 #${selected.replayRank} · ` : '';
     meta.textContent = `${result}${flagged.length} 支队伍有已观测回退 · 样本覆盖 ${coverage}` +
+      (sharedArchiveAt ? ` · 共享采样截至 ${fmtDayTime(sharedArchiveAt * 1000)}` : '') +
       (ambiguousLeaders ? ` · ${ambiguousLeaders} 道题的模拟榜首分数并列，奖励归属为估算` : '');
     const body = $('#replayBody');
     const open = new Set([...body.querySelectorAll('details[open]')].map(el => el.dataset.key));

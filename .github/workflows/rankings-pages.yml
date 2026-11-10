@@ -2,13 +2,15 @@ name: Rankings snapshot & Pages
 
 on:
   schedule:
-    # GitHub Actions 的最短计划间隔为 5 分钟；错开整点，减少被队列延迟/丢弃的概率
-    - cron: "2-57/5 * * * *"
+    # 每 10 分钟采样一次，错开整点。
+    - cron: "2-52/10 * * * *"
   workflow_dispatch:
   push:
     branches: [main]
     paths:
       - "docs/**"
+      - "monitor/**"
+      - "scripts/**"
       - ".github/workflows/rankings-pages.yml"
 
 permissions:
@@ -22,26 +24,72 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: actions/setup-python@v5
+        if: github.event_name != 'push'
+        with:
+          python-version: "3.12"
+
+      - name: Capture current rankings
+        if: github.event_name != 'push'
+        run: |
+          python -m pip install --disable-pip-version-check requests
+          python scripts/build_snapshot.py --out "$RUNNER_TEMP/snapshot.json"
+
       - name: Build static site
+        env:
+          PAGES_BASE_URL: ${{ steps.pages.outputs.base_url }}
         run: |
           mkdir -p _site
           cp docs/index.html docs/style.css docs/app.js docs/config.js docs/snapshot-client.js docs/favicon.svg _site/
-          cp docs/score-replay.js docs/score-peaks.json _site/
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
+          cp docs/score-replay.js _site/
+          inputs=(docs/score-peaks.json)
+          previous="$RUNNER_TEMP/previous-score-peaks.json"
+          status=$(curl --silent --show-error --location --retry 2 --max-time 30 \
+            --header 'Cache-Control: no-cache' --output "$previous" --write-out '%{http_code}' \
+            "${PAGES_BASE_URL%/}/score-peaks.json?run=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT")
+          case "$status" in
+            200) inputs+=("$previous") ;;
+            404) echo "No published score archive yet; using the repository seed." ;;
+            *) echo "::error::Could not read the published archive (HTTP $status)"; exit 1 ;;
+          esac
+          if [[ "$GITHUB_EVENT_NAME" != 'push' ]]; then
+            inputs+=("$RUNNER_TEMP/snapshot.json")
+          fi
+          node scripts/build_score_peaks.mjs _site/score-peaks.json "${inputs[@]}"
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+
+      - name: Send snapshot to Worker if configured
+        if: github.event_name != 'push'
+        continue-on-error: true
+        env:
+          COLLECTOR_SECRET: ${{ secrets.COLLECTOR_SECRET }}
+        run: |
+          if [[ -z "$COLLECTOR_SECRET" ]]; then
+            echo "Worker collection is unconfigured; the shared Pages archive is still published."
+            exit 0
+          fi
+          curl --fail-with-body --silent --show-error --retry 2 --max-time 30 \
+            --header "Authorization: Bearer $COLLECTOR_SECRET" --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/snapshot.json" \
+            https://cannjudge-rankings-proxy.cannjudge-rankings-proxy.workers.dev/record
 
   deploy:
     needs: build
@@ -53,26 +101,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
-  collect:
-    if: github.event_name != 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Build and store a rankings snapshot
-        env:
-          COLLECTOR_SECRET: ${{ secrets.COLLECTOR_SECRET }}
-        run: |
-          : "${COLLECTOR_SECRET:?Set COLLECTOR_SECRET in repository Actions secrets}"
-          python -m pip install --disable-pip-version-check requests
-          python scripts/build_snapshot.py --out "$RUNNER_TEMP/snapshot.json"
-          curl --fail-with-body --silent --show-error --retry 2 --max-time 30 \
-            --header "Authorization: Bearer $COLLECTOR_SECRET" --header 'Content-Type: application/json' \
-            --data-binary "@$RUNNER_TEMP/snapshot.json" \
-            https://cannjudge-rankings-proxy.cannjudge-rankings-proxy.workers.dev/record
