@@ -20,7 +20,7 @@ permissions:
 
 concurrency:
   group: rankings-pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -41,7 +41,7 @@ jobs:
       - name: Build static site
         run: |
           mkdir -p _site
-          cp docs/index.html docs/style.css docs/app.js docs/favicon.svg _site/
+          cp docs/index.html docs/style.css docs/app.js docs/config.js docs/favicon.svg _site/
           python scripts/build_snapshot.py --out _site/data/snapshot.json
 
       - name: Configure Pages

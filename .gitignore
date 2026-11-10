@@ -4,3 +4,7 @@ _site/
 docs/data/
 .env
 *.session.json
+
+node_modules/
+.wrangler/
+.dev.vars

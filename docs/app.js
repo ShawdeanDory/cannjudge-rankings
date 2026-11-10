@@ -3,6 +3,7 @@
   'use strict';
 
   const $ = (sel, root = document) => root.querySelector(sel);
+  const WORKER_URL = (window.CANNJUDGE_WORKER_URL || '').replace(/\/$/, '');
   const DEFAULT_TEAM = 'd0uB4o';
   const STORE_TEAM = 'cannjudge.monitor.team';
   const STORE_PAUSED = 'cannjudge.monitor.paused';
@@ -11,6 +12,7 @@
 
   const state = {
     mode: 'unknown',
+    source: 'static',
     data: null,
     version: null,
     team: '',
@@ -160,7 +162,7 @@
     const liveLink = $('#liveUpdateLink');
     const footerLink = $('#actionsLink');
     const banner = $('#staleBanner');
-    if (state.mode !== 'static' || !url) {
+    if (state.mode !== 'static' || state.source === 'worker' || !url) {
       if (liveLink) liveLink.hidden = true;
       if (footerLink) footerLink.hidden = true;
       if (banner) banner.hidden = true;
@@ -199,7 +201,7 @@
     if (badge) {
       if (state.mode === 'static') {
         badge.className = 'mode-badge static' + (age > 900 ? ' stale' : '');
-        badge.textContent = 'GitHub Pages 快照';
+        badge.textContent = state.source === 'worker' ? 'Cloudflare自动更新' : 'GitHub Pages备用快照';
       } else if (state.mode === 'local') {
         badge.className = 'mode-badge local';
         badge.textContent = '本地实时';
@@ -224,7 +226,7 @@
       return;
     }
     if (state.mode === 'static') {
-      setLive('', `快照于 ${fmtClock(state.lastGenerated)} · ${fmtAgo(state.lastGenerated)}`);
+      setLive('', `${state.source === 'worker' ? '更新于' : '快照于'} ${fmtClock(state.lastGenerated)} · ${fmtAgo(state.lastGenerated)}`);
     } else {
       setLive('', `实时更新 · ${fmtAgo(state.lastGenerated)}`);
     }
@@ -587,7 +589,7 @@
     const quit = $('#quitBtn');
     if (state.mode === 'static') {
       if (quit) quit.style.display = 'none';
-      $('#footerNote').innerHTML = '数据来源 <a href="https://cannjudge.cn/public/ictcompetition" target="_blank" rel="noreferrer">CANNJudge</a> · GitHub Pages 静态快照，由 GitHub Actions 定时生成';
+      $('#footerNote').innerHTML = '数据来源 <a href="https://cannjudge.cn/public/ictcompetition" target="_blank" rel="noreferrer">CANNJudge</a> · 每分钟通过Cloudflare获取公开榜单，连接失败时显示Pages备用快照';
       const label = $('#refreshBtn .btn-label');
       if (label) label.textContent = '重新加载';
     } else {
@@ -618,6 +620,30 @@
     updateLiveStatus();
   }
 
+  async function fetchPublicSnapshot(force) {
+    if (WORKER_URL) {
+      try {
+        const response = await fetch(WORKER_URL + '/api/snapshot', {
+          cache: 'no-store', signal: AbortSignal.timeout(45000),
+        });
+        if (!response.ok) throw new Error('Worker HTTP ' + response.status);
+        const data = await response.json();
+        if (!data.ready || !data.total?.rows?.length || !data.problems?.length
+            || !data.problems.every(p => data.by_problem?.[p.id]?.complete)) {
+          throw new Error('Incomplete Worker response');
+        }
+        state.source = 'worker';
+        return data;
+      } catch (error) {
+        console.warn('Worker unavailable, using Pages snapshot', error.message);
+      }
+    }
+    const response = await fetch('data/snapshot.json', { cache: force ? 'reload' : 'no-cache' });
+    if (!response.ok) throw new Error('Snapshot HTTP ' + response.status);
+    state.source = 'static';
+    return response.json();
+  }
+
   async function poll(force = false) {
     if (state.inflight) return;
     if (state.paused && !force) return;
@@ -625,9 +651,7 @@
     try {
       if (state.mode === 'static') {
         // no-cache 让浏览器带 If-None-Match 校验，未变化时只收到 304，不会反复下载 500 KiB
-        const res = await fetch('data/snapshot.json', { cache: force ? 'reload' : 'no-cache' });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
+        const data = await fetchPublicSnapshot(force);
         if (data.version !== state.version) {
           applySnapshot(data);
         } else {
