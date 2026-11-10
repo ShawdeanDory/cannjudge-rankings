@@ -1,4 +1,4 @@
-import { buildSnapshot } from './snapshot-client.js?v=3';
+import { buildSnapshot } from './snapshot-client.js?v=4';
 /* CANNJudge 实时排名监视器 —— 纯前端渲染逻辑 */
 (() => {
   'use strict';
@@ -8,7 +8,8 @@ import { buildSnapshot } from './snapshot-client.js?v=3';
   const DEFAULT_TEAM = 'd0uB4o';
   const STORE_PAUSED = 'cannjudge.monitor.paused';
   const STORE_THEME = 'cannjudge.monitor.theme';
-  const STORE_SESSION = 'cannjudge.monitor.session';
+  const PAGE_CODE = 'LGY';
+  const STORE_ACCESS = 'cannjudge.monitor.page-unlocked';
   const POLL_MS = 3000;
   const STATIC_POLL_MS = 60000;
 
@@ -19,7 +20,6 @@ import { buildSnapshot } from './snapshot-client.js?v=3';
     version: null,
     team: DEFAULT_TEAM,
     search: '',
-    session: '',
     history: null,
     historyKey: '',
     historyError: false,
@@ -632,7 +632,6 @@ import { buildSnapshot } from './snapshot-client.js?v=3';
         state.historyKey = '';
       }
     }
-    if (!state.session) return;
     renderTotal();
     renderHistory();
   }
@@ -657,7 +656,6 @@ import { buildSnapshot } from './snapshot-client.js?v=3';
     const quit = $('#quitBtn');
     if (state.mode === 'static') {
       if (quit) quit.style.display = 'none';
-      $('#logoutBtn').hidden = false;
       $('#footerNote').innerHTML = '数据来源 <a href="https://cannjudge.cn/public/ictcompetition" target="_blank" rel="noreferrer">CANNJudge</a> · 每分钟更新 · 历史以定时快照为准';
       const label = $('#refreshBtn .btn-label');
       if (label) label.textContent = '重新加载';
@@ -681,16 +679,9 @@ import { buildSnapshot } from './snapshot-client.js?v=3';
 
   async function workerFetch(path, options = {}) {
     if (!WORKER_URL) throw new Error('Worker URL not configured');
-    const headers = new Headers(options.headers);
-    const session = state.session;
-    if (path !== '/login' && session) headers.set('Authorization', `Bearer ${session}`);
-    const response = await fetch(new URL(path, WORKER_URL), {
-      ...options, headers, cache: 'no-store', signal: AbortSignal.timeout(20000),
+    return fetch(new URL(path, WORKER_URL), {
+      ...options, cache: 'no-store', signal: AbortSignal.timeout(20000),
     });
-    if (response.status === 401 && path !== '/login' && session && session === state.session) {
-      endSession('登录已过期，请重新输入密码。');
-    }
-    return response;
   }
 
   async function fetchOnlineSnapshot() {
@@ -702,9 +693,7 @@ import { buildSnapshot } from './snapshot-client.js?v=3';
       });
       state.source = 'worker';
       return data;
-    } catch (error) {
-      if (!state.session) throw error;
-    }
+    } catch { /* use the latest complete backup */ }
     const response = await workerFetch('/backup');
     if (!response.ok) throw new Error('Snapshot HTTP ' + response.status);
     state.source = 'static';
@@ -712,15 +701,12 @@ import { buildSnapshot } from './snapshot-client.js?v=3';
   }
 
   async function poll(force = false) {
-    if (state.inflight) return;
-    if (state.mode === 'static' && !state.session) return;
+    if (state.inflight || $('#dashboard').hidden) return;
     if (state.paused && !force) return;
     state.inflight = true;
     try {
       if (state.mode === 'static') {
         const data = await fetchOnlineSnapshot();
-        if (!state.session) return;
-        showDashboard();
         if (data.version !== state.version) {
           applySnapshot(data);
         } else {
@@ -745,11 +731,7 @@ import { buildSnapshot } from './snapshot-client.js?v=3';
           renderHistory();
         }
       }
-    } catch (err) {
-      if (state.mode === 'static' && state.session && $('#dashboard').hidden) {
-        $('#loginMessage').textContent = '已登录，榜单暂不可用，稍后会重试。';
-        $('#loginView').hidden = false;
-      }
+    } catch {
       state.connected = false;
       updateLiveStatus();
     } finally {
@@ -763,62 +745,25 @@ import { buildSnapshot } from './snapshot-client.js?v=3';
     try { localStorage.setItem(STORE_THEME, theme); } catch { /* optional preference */ }
   }
 
-  function saveSession(session) {
-    state.session = session;
-    try {
-      if (session) sessionStorage.setItem(STORE_SESSION, session);
-      else sessionStorage.removeItem(STORE_SESSION);
-    } catch { /* the current page can still keep the session in memory */ }
-  }
-
   function showDashboard() {
-    if (!$('#dashboard').hidden) return;
-    $('#loginView').hidden = true;
+    $('#accessView').hidden = true;
     $('#dashboard').hidden = false;
     syncTopbarHeight();
   }
 
-  function endSession(message) {
-    saveSession('');
-    state.data = null;
-    state.version = null;
-    state.history = null;
-    state.historyKey = '';
-    state.historyError = false;
-    $('#dashboard').hidden = true;
-    $('#loginView').hidden = false;
-    $('#loginMessage').textContent = message;
-    $('#loginPassword').focus();
-  }
-
-  async function login(event) {
+  function unlockDashboard(event) {
     event.preventDefault();
-    const password = $('#loginPassword');
-    const message = $('#loginMessage');
-    const button = event.currentTarget.querySelector('button');
-    if (button.disabled) return;
-    button.disabled = true;
-    message.textContent = '正在登录…';
-    try {
-      const response = await workerFetch('/login', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: password.value }),
-      });
-      if (response.status === 401) message.textContent = '密码不正确。';
-      else if (response.status === 429) message.textContent = '尝试次数过多，请稍后再试。';
-      else if (!response.ok) message.textContent = '登录服务暂不可用。';
-      else {
-        saveSession((await response.json()).token);
-        message.textContent = '正在读取榜单…';
-        await poll(true);
-      }
-    } catch {
-      message.textContent = '无法连接登录服务。';
-    } finally {
-      password.value = '';
-      button.disabled = false;
-      if (!state.session) password.focus();
+    const input = $('#accessCode');
+    const valid = input.value.trim() === PAGE_CODE;
+    input.value = '';
+    if (!valid) {
+      $('#accessMessage').textContent = '口令不正确。';
+      input.focus();
+      return;
     }
+    try { sessionStorage.setItem(STORE_ACCESS, '1'); } catch { /* the current page can still be unlocked */ }
+    showDashboard();
+    poll(true);
   }
 
   /* ---------- 交互 ---------- */
@@ -848,11 +793,7 @@ import { buildSnapshot } from './snapshot-client.js?v=3';
     $('#themeBtn').addEventListener('click', () => {
       setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
     });
-    $('#loginForm').addEventListener('submit', login);
-    $('#logoutBtn').addEventListener('click', () => {
-      saveSession('');
-      location.reload();
-    });
+    $('#accessForm').addEventListener('submit', unlockDashboard);
 
     const search = $('#searchInput');
     let searchTimer = null;
@@ -897,7 +838,7 @@ import { buildSnapshot } from './snapshot-client.js?v=3';
       if (state.mode === 'static') {
         try {
           await poll(true);
-          if (state.session) toast(state.connected ? `已更新榜单 · ${fmtClock(state.lastGenerated)}` : '暂时无法更新榜单');
+          toast(state.connected ? `已更新榜单 · ${fmtClock(state.lastGenerated)}` : '暂时无法更新榜单');
         } finally {
           btn.classList.remove('busy');
         }
@@ -939,11 +880,12 @@ import { buildSnapshot } from './snapshot-client.js?v=3';
 
   async function init() {
     let theme = 'dark';
+    let unlocked = false;
     try {
       state.paused = localStorage.getItem(STORE_PAUSED) === '1';
       if (localStorage.getItem(STORE_THEME) === 'light') theme = 'light';
     } catch { /* optional preferences */ }
-    try { state.session = sessionStorage.getItem(STORE_SESSION) || ''; } catch { /* optional storage */ }
+    try { unlocked = sessionStorage.getItem(STORE_ACCESS) === '1'; } catch { /* optional storage */ }
     setTheme(theme);
     if (state.paused) {
       const btn = $('#pauseBtn');
@@ -958,14 +900,14 @@ import { buildSnapshot } from './snapshot-client.js?v=3';
     setupInteractions();
     await detectMode();
     applyModeChrome();
-    if (state.mode === 'local') showDashboard();
-    else if (!state.session) {
-      $('#loginView').hidden = false;
-      $('#loginPassword').focus();
+    if (state.mode === 'local' || unlocked) showDashboard();
+    else {
+      $('#accessView').hidden = false;
+      $('#accessCode').focus();
     }
     await poll(true);
 
-    setInterval(() => poll($('#dashboard').hidden), state.mode === 'static' ? STATIC_POLL_MS : POLL_MS);
+    setInterval(() => poll(false), state.mode === 'static' ? STATIC_POLL_MS : POLL_MS);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) poll(false);
     });

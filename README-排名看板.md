@@ -11,9 +11,9 @@
 2. 在 GitHub 仓库 **Settings → Pages** 将 Source 设为 **GitHub Actions**。将 `COLLECTOR_SECRET` 配为仓库的 Actions secret，值与 Worker 的同名 secret 相同。
 3. 合并代码到 `main`，然后在 **Actions → Rankings snapshot & Pages → Run workflow** 手动触发一次，发布静态页面并写入首个历史快照。
 
-页面登录后每分钟读取榜单。Actions 约每 5 分钟采样一次，调度延迟会缩短可见的历史覆盖。历史从首次采样开始，采样之间短暂发生的变化可能不会出现在记录里。实时接口失败时，页面使用需要登录才能读取的最近一次完整快照。
+输入页面口令后每分钟读取榜单。Actions 约每 5 分钟采样一次，调度延迟会缩短可见的历史覆盖。历史从首次采样开始，采样之间短暂发生的变化可能不会出现在记录里。实时接口失败时，页面使用 Worker 保存的最近一次完整快照。
 
-从旧版本迁移后，确认 Pages 的 `/data/snapshot.json` 返回 404，且 Worker 的榜单、历史、备用快照在无会话时返回 401。先前已公开下载的快照无法收回。
+页面口令由浏览器验证，当前标签页刷新时会保留解锁状态。口令可以在 `docs/app.js` 中看到，榜单接口仍可直接读取。历史采样上传需要单独的采集密钥。
 
 ## 本地运行
 
@@ -22,4 +22,4 @@ python -m pip install requests
 python monitor/app.py   # http://127.0.0.1:8765/
 ```
 
-Python 本地服务只绑定回环地址，可预览榜单和队伍查询。在线密码与定时历史由 Worker 提供。
+Python 本地服务只绑定回环地址，可预览榜单和队伍查询。在线定时历史由 Worker 提供。

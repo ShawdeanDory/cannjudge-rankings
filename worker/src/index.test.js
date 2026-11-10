@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './index.js';
-import { createSession } from './auth.js';
 import { buildSnapshot } from '../../docs/snapshot-client.js';
 
 const makeRow = rank => ({ rank, team: { team_name: `team-${rank}` }, score: 100 - rank, submission: { status: 'Pass' } });
@@ -27,32 +26,26 @@ test('combines all pages into the existing dashboard schema', async () => {
   assert.equal(data.by_problem['problem-1'].rows[0].status, 'Pass');
 });
 
-const env = { DASHBOARD_PASSWORD: 'test-password', SESSION_SECRET: 'test-session-signing-key-minimum-length' };
-
-test('password login issues a signed session and rejects invalid credentials or throttled attempts', async () => {
-  let allowed = true;
-  const configured = { ...env, RANKING_STORE: { getByName: () => ({
-    fetch: async () => new Response(null, { status: allowed ? 204 : 429 }),
-  }) } };
-  const login = password => worker.fetch(new Request('https://worker.example/login', {
-    method: 'POST', body: JSON.stringify({ password }),
-  }), configured, {});
-  assert.equal((await login('incorrect')).status, 401);
-  const response = await login(env.DASHBOARD_PASSWORD);
-  assert.equal(response.status, 200);
-  assert.match((await response.json()).token, /^\d+\.[a-f0-9-]+\.[a-f0-9]{64}$/);
-  allowed = false;
-  assert.equal((await login(env.DASHBOARD_PASSWORD)).status, 429);
-});
-
-test('backup, history and uploads reject unauthenticated or mismatched credentials', async () => {
-  const origin = 'https://worker.example';
-  const send = (path, method, token) => worker.fetch(new Request(origin + path, {
-    method, headers: { Authorization: `Bearer ${token}` },
-  }), env, {});
-  assert.equal((await send('/backup', 'GET', 'bad')).status, 401);
-  assert.equal((await send('/history', 'POST', 'bad')).status, 401);
-  assert.equal((await send('/record', 'POST', await createSession(env))).status, 401);
+test('reads history and backup without a session and restricts snapshot uploads to the collector', async () => {
+  const env = {
+    COLLECTOR_SECRET: 'collector-test-secret',
+    RANKING_STORE: { getByName: () => ({
+      fetch: async url => Response.json({ path: new URL(url).pathname }),
+    }) },
+  };
+  const send = (path, options) => worker.fetch(new Request('https://worker.example' + path, options), env, {});
+  assert.deepEqual(await (await send('/backup')).json(), { path: '/backup' });
+  const history = await send('/history', {
+    method: 'POST', body: JSON.stringify({ at: Math.floor(Date.now() / 1000), teams: ['team-1'] }),
+  });
+  assert.deepEqual(await history.json(), { path: '/history' });
+  assert.equal((await send('/login', { method: 'POST' })).status, 404);
+  const upload = token => send('/record', {
+    method: 'POST', body: '{}', headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  assert.equal((await upload()).status, 401);
+  assert.equal((await upload('wrong')).status, 401);
+  assert.deepEqual(await (await upload(env.COLLECTOR_SECRET)).json(), { path: '/record' });
 });
 test('partial pagination fails instead of reporting a fresh complete snapshot', async () => {
   await assert.rejects(buildSnapshot(upstream(true)), /Incomplete/);
@@ -87,17 +80,14 @@ test('streams raw pages and caches each normalized pagination request', async ()
   };
   try {
     const url = 'https://worker.example/api/problems/6ad9857c3ff2fef7e8fd34ab/ranking?page=2&size=999';
-    const token = await createSession(env);
-    const request = new Request(url, { headers: { Authorization: `Bearer ${token}` } });
+    const request = new Request(url);
     const context = { waitUntil: promise => pending.push(promise) };
-    const first = await worker.fetch(request, env, context);
+    const first = await worker.fetch(request, {}, context);
     assert.equal(await first.text(), raw);
     await Promise.all(pending);
-    const cached = await worker.fetch(request, env, context);
+    const cached = await worker.fetch(request, {}, context);
     assert.equal(await cached.text(), raw);
     assert.equal(cached.headers.get('Cache-Control'), 'no-store');
-    assert.equal((await worker.fetch(new Request(url), env, context)).status, 401);
-    assert.equal((await worker.fetch(new Request(url, { headers: { Authorization: `Bearer ${token.slice(0, -1)}` } }), env, context)).status, 401);
     assert.equal(calls, 1);
   } finally {
     globalThis.fetch = originalFetch;

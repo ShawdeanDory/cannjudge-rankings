@@ -64,7 +64,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Build and store a private snapshot
+      - name: Build and store a rankings snapshot
         env:
           COLLECTOR_SECRET: ${{ secrets.COLLECTOR_SECRET }}
         run: |

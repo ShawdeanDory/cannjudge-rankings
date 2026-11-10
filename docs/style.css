@@ -138,7 +138,7 @@ a:hover { text-decoration: underline; }
 
 .field { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); min-width: 0; }
 .field label { white-space: nowrap; }
-.field input, .field select, .login-card input {
+.field input, .field select, .access-card input {
   min-width: 0;
   padding: 8px 10px;
   border-radius: 10px;
@@ -150,7 +150,7 @@ a:hover { text-decoration: underline; }
 }
 .field input { width: 135px; }
 .field select { width: 175px; cursor: pointer; }
-.field input:focus, .field select:focus, .login-card input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.field input:focus, .field select:focus, .access-card input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .btn {
   position: relative;
@@ -209,13 +209,12 @@ a:hover { text-decoration: underline; }
   backdrop-filter: blur(14px);
 }
 
-.login-view { min-height: 100svh; display: grid; place-items: center; padding: 24px; }
-.login-card { width: min(100%, 360px); padding: 26px; display: grid; gap: 12px; }
-.login-card h1 { margin: 0 0 8px; font-size: 22px; }
-.login-card label { color: var(--muted); }
-.login-card .btn { justify-content: center; }
-.login-card .btn:disabled { opacity: .7; cursor: wait; }
-#loginMessage { margin: 0; min-height: 1.5em; color: var(--muted); }
+.access-view { min-height: 100svh; display: grid; place-items: center; padding: 24px; }
+.access-card { width: min(100%, 360px); padding: 26px; display: grid; gap: 12px; }
+.access-card h1 { margin: 0 0 8px; font-size: 22px; }
+.access-card label { color: var(--muted); }
+.access-card .btn { justify-content: center; }
+#accessMessage { margin: 0; min-height: 1.5em; color: var(--muted); }
 
 .stale-banner {
   display: flex;

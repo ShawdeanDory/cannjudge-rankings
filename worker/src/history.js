@@ -16,26 +16,11 @@ export class RankingStore {
       CREATE TABLE IF NOT EXISTS problems (bucket INTEGER NOT NULL, at INTEGER NOT NULL, scores TEXT NOT NULL,
         PRIMARY KEY (bucket, at)) WITHOUT ROWID;
       CREATE INDEX IF NOT EXISTS problems_at ON problems(at);
-      CREATE TABLE IF NOT EXISTS backup (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, body TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS logins (ip TEXT PRIMARY KEY, window INTEGER NOT NULL, count INTEGER NOT NULL)`);
-  }
-
-  allowLogin(ip) {
-    const window = Math.floor(Date.now() / 600000);
-    return this.storage.transactionSync(() => {
-      this.sql.exec('DELETE FROM logins WHERE window < ?', window);
-      const counts = new Map([...this.sql.exec('SELECT ip, count FROM logins WHERE ip IN (?, ?)', '', ip)]
-        .map(row => [row.ip, row.count]));
-      if ((counts.get(ip) || 0) >= 5 || (counts.get('') || 0) >= 60) return false;
-      this.sql.exec(`INSERT INTO logins VALUES (?, ?, 1), ('', ?, 1)
-        ON CONFLICT(ip) DO UPDATE SET count = count + 1`, ip, window, window);
-      return true;
-    });
+      CREATE TABLE IF NOT EXISTS backup (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, body TEXT NOT NULL)`);
   }
 
   async fetch(request) {
     switch (new URL(request.url).pathname) {
-      case '/allow-login': return new Response(null, { status: this.allowLogin(await request.text()) ? 204 : 429 });
       case '/record': return this.record(await request.text());
       case '/history': {
         const { at, teams } = await request.json();
