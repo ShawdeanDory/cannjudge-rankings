@@ -2,7 +2,7 @@
 
 [打开在线排名看板](https://shawdeandory.github.io/cannjudge-rankings/)
 
-GitHub Actions每5分钟计划抓取公开榜单，页面每60秒检查快照。实际更新时间受Actions调度影响。
+页面每60秒通过Cloudflare Worker读取公开榜单，Worker边缘缓存60秒。连接失败时显示GitHub Actions生成的Pages备用快照，并标明实际数据时间。
 
 [部署与使用说明](README-排名看板.md)
 

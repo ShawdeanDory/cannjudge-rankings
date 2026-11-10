@@ -15,3 +15,5 @@ Worker只接受固定快照路径的GET及OPTIONS请求，数据请求固定发�
 ## 验证记录
 
 2026年11月10日本地通过3项自动检查，覆盖分页合并、不完整分页拒绝更新、请求路径与方法及来源限制。真实CANNJudge接口验证取得595支队伍及10道题的完整榜单。Wrangler打包验证通过。Worker已部署，版本ID为`9481dcda-ee87-46b0-8ce5-99c352660b55`。公开地址为`https://cannjudge-rankings-proxy.cannjudge-rankings-proxy.workers.dev`。
+
+线上验证已完成。Pages提交`5584d25`发布成功，页面显示“Cloudflare自动更新”。保持页面打开且不进行手动刷新，更新时间从2026年11月10日11:51:08自动推进至11:52:24，595支队伍和10道题均完整。
