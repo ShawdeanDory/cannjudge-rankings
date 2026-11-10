@@ -47,7 +47,7 @@ export async function buildSnapshot(get) {
     app: 'cannjudge-rank-monitor', app_version: '1.1.0', mode: 'worker', ready: true,
     version: Date.now(), generated_at: now, server_time: now,
     contest: { title: contest.title || '华为ICT大赛', name: 'ictcompetition', url: `${UPSTREAM}/public/ictcompetition` },
-    problems: problems.map(p => ({ id: p._id, name: p.name, title: p.title || p.name || p._id })),
+    problems: problems.map(p => ({ id: p._id, name: p.name, title: p.title || p.name || p._id, difficulty: p.difficulty })),
     total: { rows: total, at: now, error: null }, by_problem: Object.fromEntries(entries),
   };
 }

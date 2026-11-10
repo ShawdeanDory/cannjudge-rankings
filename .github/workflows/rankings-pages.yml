@@ -9,8 +9,6 @@ on:
     branches: [main]
     paths:
       - "docs/**"
-      - "monitor/**"
-      - "scripts/**"
       - ".github/workflows/rankings-pages.yml"
 
 permissions:
@@ -24,25 +22,17 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install requests
-        run: python -m pip install --disable-pip-version-check requests
-
       - name: Build static site
         run: |
           mkdir -p _site
           cp docs/index.html docs/style.css docs/app.js docs/config.js docs/snapshot-client.js docs/favicon.svg _site/
-          python scripts/build_snapshot.py --out _site/data/snapshot.json
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -62,3 +52,26 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  collect:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build and store a private snapshot
+        env:
+          COLLECTOR_SECRET: ${{ secrets.COLLECTOR_SECRET }}
+        run: |
+          : "${COLLECTOR_SECRET:?Set COLLECTOR_SECRET in repository Actions secrets}"
+          python -m pip install --disable-pip-version-check requests
+          python scripts/build_snapshot.py --out "$RUNNER_TEMP/snapshot.json"
+          curl --fail-with-body --silent --show-error --retry 2 --max-time 30 \
+            --header "Authorization: Bearer $COLLECTOR_SECRET" --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/snapshot.json" \
+            https://cannjudge-rankings-proxy.cannjudge-rankings-proxy.workers.dev/record

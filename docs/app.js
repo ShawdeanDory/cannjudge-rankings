@@ -1,4 +1,4 @@
-import { buildSnapshot } from './snapshot-client.js?v=2';
+import { buildSnapshot } from './snapshot-client.js?v=3';
 /* CANNJudge 实时排名监视器 —— 纯前端渲染逻辑 */
 (() => {
   'use strict';
@@ -6,8 +6,9 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
   const $ = (sel, root = document) => root.querySelector(sel);
   const WORKER_URL = (window.CANNJUDGE_WORKER_URL || '').replace(/\/$/, '');
   const DEFAULT_TEAM = 'd0uB4o';
-  const STORE_TEAM = 'cannjudge.monitor.team';
   const STORE_PAUSED = 'cannjudge.monitor.paused';
+  const STORE_THEME = 'cannjudge.monitor.theme';
+  const STORE_SESSION = 'cannjudge.monitor.session';
   const POLL_MS = 3000;
   const STATIC_POLL_MS = 60000;
 
@@ -16,8 +17,12 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     source: 'static',
     data: null,
     version: null,
-    team: '',
+    team: DEFAULT_TEAM,
     search: '',
+    session: '',
+    history: null,
+    historyKey: '',
+    historyError: false,
     paused: false,
     connected: false,
     inflight: false,
@@ -32,7 +37,6 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     deltaTimer: null,
     lastGenerated: 0,
     toastTimer: null,
-    rebuildCards: false,
   };
 
   const STATUS_ZH = {
@@ -57,6 +61,17 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
   function fmtScore(value) {
     const n = Number(value);
     return Number.isFinite(n) ? n.toFixed(2) : '–';
+  }
+
+  function scoreDelta(current, previous) {
+    const cents = Math.round(current * 100) - Math.round(previous * 100);
+    return `<span class="score-delta ${cents > 0 ? 'up' : cents < 0 ? 'down' : ''}">${cents > 0 ? '+' : ''}${fmtScore(cents / 100)}</span>`;
+  }
+
+  function difficultyBadge(problem) {
+    const level = Number(problem.difficulty);
+    const label = { 1: '简单', 2: '中等', 3: '困难' }[level] || '难度未知';
+    return `<span class="difficulty level-${level}">${label}</span>`;
   }
 
   function fmtClock(epochSeconds) {
@@ -202,7 +217,7 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     if (badge) {
       if (state.mode === 'static') {
         badge.className = 'mode-badge static' + (age > 900 ? ' stale' : '');
-        badge.textContent = state.source === 'worker' ? 'Cloudflare自动更新' : 'GitHub Pages备用快照';
+        badge.textContent = state.source === 'worker' ? 'Cloudflare自动更新' : '备用快照';
       } else if (state.mode === 'local') {
         badge.className = 'mode-badge local';
         badge.textContent = '本地实时';
@@ -211,7 +226,7 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     renderUpdateLinks(age);
     if (!state.connected) {
       if (state.mode === 'static' && !state.data) {
-        setLive('offline', '等待 GitHub Actions 生成首个快照…');
+        setLive('offline', '榜单暂不可用，正在重试…');
       } else {
         setLive('offline', '连接中断，重试中…');
       }
@@ -233,54 +248,22 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     }
   }
 
-  function renderContestLine() {
-    const data = state.data;
-    if (!data) return;
-    const title = data.contest && data.contest.title ? data.contest.title : 'CANNJudge';
-    const problemCount = (data.problems || []).length;
-    const teams = totalRows().length;
-    const parts = [title];
-    if (problemCount) parts.push(`${problemCount} 道题`);
-    if (teams) parts.push(`${teams} 支队伍`);
-    $('#contestLine').textContent = parts.join(' · ');
-    $('#buildInfo').textContent = 'v' + (data.app_version || '1.0.0');
-  }
-
   /* ---------- 队伍选择 ---------- */
-  function pickDefaultTeam(rows) {
-    const names = new Set(rows.map((row) => row.team));
-    let saved = '';
-    try { saved = localStorage.getItem(STORE_TEAM) || ''; } catch (e) { saved = ''; }
-    if (saved && names.has(saved)) return saved;
-    if (names.has(DEFAULT_TEAM)) return DEFAULT_TEAM;
-    return rows.length ? rows[0].team : '';
+  function matchingTeams() {
+    const query = $('#teamSearch').value.trim().toLowerCase();
+    return totalRows().filter(row => row.team.toLowerCase().includes(query));
   }
 
-  function renderTeamOptions(force = false) {
+  function renderTeamOptions() {
     const select = $('#teamSelect');
-    const rows = totalRows();
-    const names = rows.map((row) => row.team);
-    const signature = names.join('\u0001');
-    if (!force && signature === state.teamSignature && select.options.length) {
-      return;
-    }
-    state.teamSignature = signature;
-
-    if (!names.length) {
-      select.innerHTML = '<option value="">暂无队伍</option>';
-      return;
-    }
-    const myTeamName = myTeam();
-    const hasMine = names.includes(myTeamName);
-    const options = names.map((name, index) => {
-      const rank = index + 1;
-      return `<option value="${esc(name)}">#${rank} ${esc(name)}</option>`;
-    });
-    if (myTeamName && !hasMine) {
-      options.unshift(`<option value="${esc(myTeamName)}">未上榜：${esc(myTeamName)}</option>`);
-    }
-    select.innerHTML = options.join('');
-    if (myTeamName) select.value = myTeamName;
+    const rows = matchingTeams();
+    const options = rows.map(row => `<option value="${esc(row.team)}">#${row.rank} ${esc(row.team)}</option>`);
+    const hasSelected = rows.some(row => row.team === myTeam());
+    const placeholder = rows.length ? '选择匹配队伍' : '无匹配队伍';
+    if (!hasSelected) options.unshift(`<option value="" disabled>${placeholder} · 当前 ${esc(myTeam())}</option>`);
+    const html = options.join('');
+    if (html !== state.teamSignature) select.innerHTML = state.teamSignature = html;
+    select.value = hasSelected ? myTeam() : '';
   }
 
   /* ---------- 我的排名 ---------- */
@@ -298,14 +281,14 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     if (!data.ready && !rows.length) {
       meta.textContent = '正在获取榜单数据…';
     } else if (!team) {
-      meta.textContent = '请先在右上角选择你的队伍';
+      meta.textContent = '请先选择队伍';
     } else if (!me) {
-      meta.innerHTML = `未在总榜找到队伍 <b>${esc(team)}</b>，请在右上角重新选择`;
+      meta.innerHTML = `未在总榜找到队伍 <b>${esc(team)}</b>`;
     } else {
       meta.innerHTML = [
         `队伍 <b>${esc(me.team)}</b>`,
         `总分 <b>${fmtScore(me.score)}</b>`,
-        `通过 <b>${me.pass}/10</b>`,
+        `通过 <b>${me.pass}/${data.problems?.length || 10}</b>`,
         `提交 <b>${me.subs}</b> 次`,
       ].join('<span class="sep">·</span>');
     }
@@ -322,9 +305,7 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
         : '未上榜';
     }
 
-    if (me && document.title.indexOf(`#${me.rank}`) !== 0) {
-      document.title = `#${me.rank} ${team} · CANNJudge 实时排名`;
-    }
+    document.title = me ? `#${me.rank} ${team} · CANNJudge 实时排名` : 'CANNJudge 实时排名监视器';
 
     renderHeroChips();
   }
@@ -371,6 +352,7 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
         return `<button type="button" class="hero-chip unsubmitted" data-pid="${esc(problem.id)}" title="${esc(problem.title)}">
           <span class="chip-dot"></span>
           <span class="chip-name">${esc(problem.title)}</span>
+          ${difficultyBadge(problem)}
           <span class="chip-rank">${loading ? '加载中' : '未提交'}<small></small></span>
           <span class="chip-score">${loading ? '正在读取…' : '暂无成绩'}</span>
         </button>`;
@@ -378,6 +360,7 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
       return `<button type="button" class="hero-chip is-me" data-pid="${esc(problem.id)}" title="${esc(problem.title)} · ${esc(statusText(mine.status))}">
         <span class="chip-dot ${cls}"></span>
         <span class="chip-name">${esc(problem.title)}</span>
+        ${difficultyBadge(problem)}
         <span class="chip-rank">#${mine.rank}<small>${count}</small></span>
         <span class="chip-score"><b>${fmtScore(mine.score)}</b> 分</span>
       </button>`;
@@ -390,7 +373,8 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     const data = state.data;
     if (!data) return;
     const total = data.total || { rows: [], at: null, error: null };
-    const key = `${total.at}|${total.error}|${myTeam()}|${state.search}`;
+    const baseline = state.history?.baseline5h;
+    const key = `${total.at}|${total.error}|${myTeam()}|${state.search}|${baseline?.at}|${state.historyError}`;
     if (!force && key === state.totalKey) return;
     state.totalKey = key;
 
@@ -402,17 +386,19 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     const keepScroll = scroller.scrollTop;
 
     if (!rows.length) {
-      body.innerHTML = `<tr><td colspan="6" class="empty">${total.error ? '总榜暂时不可用，正在重试…' : '正在加载总排行榜…'}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="7" class="empty">${total.error ? '总榜暂时不可用，正在重试…' : '正在加载总排行榜…'}</td></tr>`;
     } else if (!filtered.length) {
-      body.innerHTML = `<tr><td colspan="6" class="empty">没有匹配「${esc(state.search)}」的队伍</td></tr>`;
+      body.innerHTML = `<tr><td colspan="7" class="empty">没有匹配「${esc(state.search)}」的队伍</td></tr>`;
     } else {
+      const pastScores = new Map(baseline?.scores);
       body.innerHTML = filtered.map((row) => {
         const isMe = row.team === myTeam();
         return `<tr class="${isMe ? 'me' : ''}">
           <td><span class="rank ${rankClass(row.rank)}">${row.rank}</span></td>
-          <td><div class="team-cell"><span class="team-name" title="${esc(row.team)}">${esc(row.team)}</span>${isMe ? '<span class="me-tag">我</span>' : ''}</div></td>
+          <td><div class="team-cell"><span class="team-name" title="${esc(row.team)}">${esc(row.team)}</span>${isMe ? '<span class="me-tag">已选</span>' : ''}</div></td>
           <td class="num col-pass">${row.pass}</td>
           <td class="num">${fmtScore(row.score)}</td>
+          <td class="num col-delta">${pastScores.has(row.team) ? scoreDelta(row.score, pastScores.get(row.team)) : '–'}</td>
           <td class="num muted col-attempt">${row.attempt}</td>
           <td class="num muted col-subs">${row.subs}</td>
         </tr>`;
@@ -432,7 +418,9 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
 
     const foot = $('#totalFoot');
     const error = total.error ? `<span class="warn">最近一次刷新失败，展示的是缓存数据</span>` : '';
-    foot.innerHTML = `<span>更新于 ${fmtClock(total.at)} · ${fmtAgo(total.at)}</span>${error}`;
+    const comparison = baseline ? `5 小时对比基准 ${fmtDayTime(baseline.at * 1000)}`
+      : state.mode === 'local' ? '本地模式无定时历史' : state.historyError ? '历史暂不可用' : '暂无 5 小时前快照';
+    foot.innerHTML = `<span>更新于 ${fmtClock(total.at)} · ${fmtAgo(total.at)}</span><span>${comparison}</span>${error}`;
   }
 
   /* ---------- 各题区域 ---------- */
@@ -448,11 +436,11 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
       card.innerHTML = `
         <div class="prob-head">
           <div class="prob-title">
-            <h3><span class="prob-index">${String(index + 1).padStart(2, '0')}</span>${esc(problem.title)}</h3>
+            <h3><span class="prob-index">${String(index + 1).padStart(2, '0')}</span>${esc(problem.title)}${difficultyBadge(problem)}</h3>
             <p class="prob-slug">${esc(problem.name)}</p>
           </div>
           <div class="my-chip none" data-role="mychip">
-            <span class="lbl">我的排名</span>
+            <span class="lbl">查询队伍</span>
             <span class="val">–</span>
           </div>
         </div>
@@ -463,12 +451,11 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
                 <th class="col-rank">排名</th>
                 <th>队伍</th>
                 <th class="num">得分</th>
-                <th>状态</th>
                 <th class="col-time">提交时间</th>
               </tr>
             </thead>
             <tbody data-role="body">
-              <tr><td colspan="5" class="empty">正在加载…</td></tr>
+              <tr><td colspan="4" class="empty">正在加载…</td></tr>
             </tbody>
           </table>
         </div>
@@ -492,9 +479,8 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     const isMe = row.team === myTeam();
     return `<tr class="${isMe ? 'me' : ''}">
       <td><span class="rank ${rankClass(row.rank)}">${row.rank}</span></td>
-      <td><div class="team-cell"><span class="team-name" title="${esc(row.user ? row.team + ' · ' + row.user : row.team)}">${esc(row.team)}</span>${isMe ? '<span class="me-tag">我</span>' : ''}</div></td>
+      <td><div class="team-cell"><span class="team-name" title="${esc(row.user ? row.team + ' · ' + row.user : row.team)}">${esc(row.team)}</span>${isMe ? '<span class="me-tag">已选</span>' : ''}</div></td>
       <td class="num">${fmtScore(row.score)}</td>
-      <td><span class="pill ${statusClass(row.status)}">${esc(statusText(row.status))}</span></td>
       <td class="muted col-time">${fmtDayTime(row.time)}</td>
     </tr>`;
   }
@@ -507,10 +493,10 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
 
     if (mine) {
       el.chip.className = 'my-chip';
-      el.chip.innerHTML = `<span class="lbl">我的排名</span><span class="val">#${mine.rank}<small>${fmtScore(mine.score)} 分</small></span>`;
+      el.chip.innerHTML = `<span class="lbl">查询队伍</span><span class="val">#${mine.rank}<small>${fmtScore(mine.score)} 分</small></span>`;
     } else {
       el.chip.className = 'my-chip none';
-      el.chip.innerHTML = `<span class="lbl">我的排名</span><span class="val">${entry ? '未提交' : '加载中'}</span>`;
+      el.chip.innerHTML = `<span class="lbl">查询队伍</span><span class="val">${entry ? '未提交' : '加载中'}</span>`;
     }
 
     const key = `${entry ? entry.at : null}|${entry ? entry.error : null}|${state.team}|${entry ? entry.rows.length : 0}`;
@@ -523,14 +509,14 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     const keepScroll = scroller.scrollTop;
 
     if (!entry || (!entry.rows.length && !entry.error)) {
-      el.body.innerHTML = '<tr><td colspan="5" class="empty">正在加载…</td></tr>';
+      el.body.innerHTML = '<tr><td colspan="4" class="empty">正在加载…</td></tr>';
       el.count.textContent = '–';
       el.updated.textContent = '–';
       return;
     }
 
     if (!entry.rows.length && entry.error) {
-      el.body.innerHTML = '<tr><td colspan="5" class="empty">该题榜单暂时不可用，正在重试…</td></tr>';
+      el.body.innerHTML = '<tr><td colspan="4" class="empty">该题榜单暂时不可用，正在重试…</td></tr>';
       el.count.textContent = '–';
       el.updated.innerHTML = '<span class="warn">刷新失败</span>';
       return;
@@ -553,7 +539,7 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     const problems = data.problems || [];
     if (!problems.length) return;
 
-    const signature = problems.map((p) => p.id).join('|');
+    const signature = JSON.stringify(problems);
     if (force || signature !== state.problemsSignature) {
       state.problemsSignature = signature;
       buildProblemCards(problems);
@@ -564,15 +550,97 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
   }
 
   function renderAll(force = false) {
-    renderContestLine();
+    $('#buildInfo').textContent = 'v' + (state.data.app_version || '1.0.0');
     renderHero();
     renderTotal(force);
     renderProblems(force);
     $('#problemCount').textContent = `${(state.data.problems || []).length} 道题`;
   }
 
+  function renderHistory() {
+    const history = state.history;
+    const table = $('#historyTable');
+    const meta = $('#historyMeta');
+    table.hidden = !history?.sampleCount;
+    if (table.hidden) {
+      meta.textContent = state.mode === 'local' ? '在线版会定时积累历史快照。'
+        : state.historyError ? '暂时无法读取历史，稍后会重试。'
+        : history ? '等待首次定时采样。' : '正在读取历史快照…';
+      return;
+    }
+    const time = at => fmtDayTime(at * 1000);
+    const from = history.firstAt;
+    meta.textContent = `${history.baseline24h ? '24 小时基准' : '暂无 24 小时基准 · 已采样'} ${time(from)} 至 ${time(history.latestAt)} · ${history.sampleCount} 次采样 · 展开查看得分与排名变动`;
+    const problems = state.data.problems;
+    const top = totalRows().slice(0, 10);
+    const byTeam = new Map(history.byTeam);
+    const liveScores = problems.map(({ id }) => {
+      const rows = problemEntry(id)?.rows || [];
+      return new Map(rows.slice().reverse().map(({ team, score, rank }) => [team, [score, rank]]));
+    });
+    const body = $('#historyBody');
+    const open = new Set([...body.querySelectorAll('details[open]')].map(el => el.dataset.key));
+    $('#historyHead').innerHTML = `<tr><th scope="col">队伍</th>${problems.map(problem =>
+      `<th scope="col">${esc(problem.title)} ${difficultyBadge(problem)}</th>`).join('')}</tr>`;
+    body.innerHTML = top.map(({ rank, team }) => {
+      const teamHistory = byTeam.get(team);
+      const series = new Map(teamHistory?.problems);
+      const cells = problems.map(({ id }, index) => {
+        const points = (series.get(id) || []).slice();
+        const [current, rank] = liveScores[index].get(team) || [null, null];
+        const at = Math.floor(state.data.generated_at);
+        const last = points.at(-1);
+        if (at > history.latestAt && ((last?.[1] ?? null) !== current || (last?.[2] ?? null) !== rank)) {
+          if (!last && teamHistory?.firstAt) points.push([teamHistory.firstAt, null, null]);
+          points.push([at, current, rank]);
+        }
+        const changes = Math.max(0, points.length - 1);
+        const label = current == null ? '–' : `#${rank} · ${fmtScore(current)}`;
+        if (!changes) return `<td>${label}</td>`;
+        const first = points[0][1];
+        const delta = first == null || current == null || current === first ? '' : scoreDelta(current, first);
+        const key = JSON.stringify([team, id]);
+        const list = points.map(([at, score, rank]) => `<li><time datetime="${new Date(at * 1000).toISOString()}">${time(at)}</time> <b>${score == null ? '未上题榜' : `#${rank} · ${fmtScore(score)}`}</b></li>`);
+        return `<td><details data-key="${esc(key)}"${open.has(key) ? ' open' : ''}>
+          <summary>${label} ${delta}<small>${changes} 次变动</small></summary><ol>${list.join('')}</ol>
+        </details></td>`;
+      });
+      return `<tr${team === myTeam() ? ' class="me"' : ''}><th scope="row">#${rank} ${esc(team)}</th>${cells.join('')}</tr>`;
+    }).join('');
+  }
+
+  async function loadHistory() {
+    if (state.mode !== 'static') {
+      renderHistory();
+      return;
+    }
+    const at = Math.floor(state.data.generated_at);
+    const teams = totalRows().slice(0, 10).map(row => row.team);
+    const key = JSON.stringify([Math.floor(at / 300), ...teams]);
+    if (key !== state.historyKey) {
+      try {
+        const response = await workerFetch('/history', {
+          method: 'POST', body: JSON.stringify({ at, teams }), headers: { 'Content-Type': 'application/json' },
+        });
+        if (!response.ok) throw new Error('History unavailable');
+        state.history = await response.json();
+        state.historyKey = key;
+        state.historyError = false;
+      } catch {
+        state.historyError = true;
+        state.history = null;
+        state.historyKey = '';
+      }
+    }
+    if (!state.session) return;
+    renderTotal();
+    renderHistory();
+  }
+
   /* ---------- 数据 ---------- */
   async function detectMode() {
+    state.mode = 'static';
+    if (!['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname)) return;
     try {
       const res = await fetch('/api/ping', { cache: 'no-store' });
       if (res.ok) {
@@ -583,14 +651,14 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
         }
       }
     } catch (err) { /* 静态托管的正常分支 */ }
-    state.mode = 'static';
   }
 
   function applyModeChrome() {
     const quit = $('#quitBtn');
     if (state.mode === 'static') {
       if (quit) quit.style.display = 'none';
-      $('#footerNote').innerHTML = '数据来源 <a href="https://cannjudge.cn/public/ictcompetition" target="_blank" rel="noreferrer">CANNJudge</a> · 每分钟通过Cloudflare获取公开榜单，连接失败时显示Pages备用快照';
+      $('#logoutBtn').hidden = false;
+      $('#footerNote').innerHTML = '数据来源 <a href="https://cannjudge.cn/public/ictcompetition" target="_blank" rel="noreferrer">CANNJudge</a> · 每分钟更新 · 历史以定时快照为准';
       const label = $('#refreshBtn .btn-label');
       if (label) label.textContent = '重新加载';
     } else {
@@ -606,44 +674,38 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     state.lastGenerated = data.generated_at;
     state.connected = true;
 
-    if (first) {
-      state.team = pickDefaultTeam(totalRows());
-      state.lastRank = null;
-      state.lastRankTeam = null;
-      renderTeamOptions(true);
-      const select = $('#teamSelect');
-      if (state.team) select.value = state.team;
-    } else {
-      renderTeamOptions(false);
-    }
-
+    renderTeamOptions();
     renderAll(first);
     updateLiveStatus();
   }
 
-  async function fetchPublicSnapshot(force) {
-    if (WORKER_URL) {
-      try {
-        const data = await buildSnapshot(async (path, params = {}) => {
-          const url = new URL(path, WORKER_URL);
-          url.search = new URLSearchParams(params).toString();
-          const response = await fetch(url, {
-            cache: 'no-store', signal: AbortSignal.timeout(20000),
-          });
-          if (!response.ok) throw new Error('Worker HTTP ' + response.status);
-          return response.json();
-        });
-        if (!data.ready || !data.total?.rows?.length || !data.problems?.length
-            || !data.problems.every(p => data.by_problem?.[p.id]?.complete)) {
-          throw new Error('Incomplete Worker response');
-        }
-        state.source = 'worker';
-        return data;
-      } catch (error) {
-        console.warn('Worker unavailable, using Pages snapshot', error.message);
-      }
+  async function workerFetch(path, options = {}) {
+    if (!WORKER_URL) throw new Error('Worker URL not configured');
+    const headers = new Headers(options.headers);
+    const session = state.session;
+    if (path !== '/login' && session) headers.set('Authorization', `Bearer ${session}`);
+    const response = await fetch(new URL(path, WORKER_URL), {
+      ...options, headers, cache: 'no-store', signal: AbortSignal.timeout(20000),
+    });
+    if (response.status === 401 && path !== '/login' && session && session === state.session) {
+      endSession('登录已过期，请重新输入密码。');
     }
-    const response = await fetch('data/snapshot.json', { cache: force ? 'reload' : 'no-cache' });
+    return response;
+  }
+
+  async function fetchOnlineSnapshot() {
+    try {
+      const data = await buildSnapshot(async (path, params = {}) => {
+        const response = await workerFetch(`${path}?${new URLSearchParams(params)}`);
+        if (!response.ok) throw new Error('Worker HTTP ' + response.status);
+        return response.json();
+      });
+      state.source = 'worker';
+      return data;
+    } catch (error) {
+      if (!state.session) throw error;
+    }
+    const response = await workerFetch('/backup');
     if (!response.ok) throw new Error('Snapshot HTTP ' + response.status);
     state.source = 'static';
     return response.json();
@@ -651,12 +713,14 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
 
   async function poll(force = false) {
     if (state.inflight) return;
+    if (state.mode === 'static' && !state.session) return;
     if (state.paused && !force) return;
     state.inflight = true;
     try {
       if (state.mode === 'static') {
-        // no-cache 让浏览器带 If-None-Match 校验，未变化时只收到 304，不会反复下载 500 KiB
-        const data = await fetchPublicSnapshot(force);
+        const data = await fetchOnlineSnapshot();
+        if (!state.session) return;
+        showDashboard();
         if (data.version !== state.version) {
           applySnapshot(data);
         } else {
@@ -664,6 +728,7 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
           state.lastGenerated = data.generated_at;
           updateLiveStatus();
         }
+        await loadHistory();
       } else {
         const params = new URLSearchParams();
         if (!force && state.version != null) params.set('version', state.version);
@@ -677,9 +742,14 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
           updateLiveStatus();
         } else {
           applySnapshot(data);
+          renderHistory();
         }
       }
     } catch (err) {
+      if (state.mode === 'static' && state.session && $('#dashboard').hidden) {
+        $('#loginMessage').textContent = '已登录，榜单暂不可用，稍后会重试。';
+        $('#loginView').hidden = false;
+      }
       state.connected = false;
       updateLiveStatus();
     } finally {
@@ -687,18 +757,101 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     }
   }
 
+  function setTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    $('#themeBtn').textContent = theme === 'light' ? '深色模式' : '浅色模式';
+    try { localStorage.setItem(STORE_THEME, theme); } catch { /* optional preference */ }
+  }
+
+  function saveSession(session) {
+    state.session = session;
+    try {
+      if (session) sessionStorage.setItem(STORE_SESSION, session);
+      else sessionStorage.removeItem(STORE_SESSION);
+    } catch { /* the current page can still keep the session in memory */ }
+  }
+
+  function showDashboard() {
+    if (!$('#dashboard').hidden) return;
+    $('#loginView').hidden = true;
+    $('#dashboard').hidden = false;
+    syncTopbarHeight();
+  }
+
+  function endSession(message) {
+    saveSession('');
+    state.data = null;
+    state.version = null;
+    state.history = null;
+    state.historyKey = '';
+    state.historyError = false;
+    $('#dashboard').hidden = true;
+    $('#loginView').hidden = false;
+    $('#loginMessage').textContent = message;
+    $('#loginPassword').focus();
+  }
+
+  async function login(event) {
+    event.preventDefault();
+    const password = $('#loginPassword');
+    const message = $('#loginMessage');
+    const button = event.currentTarget.querySelector('button');
+    if (button.disabled) return;
+    button.disabled = true;
+    message.textContent = '正在登录…';
+    try {
+      const response = await workerFetch('/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: password.value }),
+      });
+      if (response.status === 401) message.textContent = '密码不正确。';
+      else if (response.status === 429) message.textContent = '尝试次数过多，请稍后再试。';
+      else if (!response.ok) message.textContent = '登录服务暂不可用。';
+      else {
+        saveSession((await response.json()).token);
+        message.textContent = '正在读取榜单…';
+        await poll(true);
+      }
+    } catch {
+      message.textContent = '无法连接登录服务。';
+    } finally {
+      password.value = '';
+      button.disabled = false;
+      if (!state.session) password.focus();
+    }
+  }
+
   /* ---------- 交互 ---------- */
   function setupInteractions() {
-    $('#teamSelect').addEventListener('change', (event) => {
-      const value = event.target.value;
+    const teamSearch = $('#teamSearch');
+    function selectTeam(value) {
       if (!value) return;
       state.team = value;
-      state.lastRank = null;
-      state.lastRankTeam = null;
-      try { localStorage.setItem(STORE_TEAM, value); } catch (e) { /* ignore */ }
-      state.cardKeys.clear();
-      renderAll(true);
+      teamSearch.value = '';
+      renderTeamOptions();
+      renderAll();
+      renderHistory();
       toast(`已切换到队伍 ${value}`);
+    }
+    $('#teamSelect').addEventListener('change', event => selectTeam(event.target.value));
+    teamSearch.addEventListener('input', renderTeamOptions);
+    teamSearch.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && teamSearch.value.trim()) {
+        const rows = matchingTeams();
+        if (rows.length === 1) selectTeam(rows[0].team);
+        else if (rows.length > 1) $('#teamSelect').focus();
+      } else if (event.key === 'Escape') {
+        teamSearch.value = '';
+        renderTeamOptions();
+      }
+    });
+    $('#themeBtn').addEventListener('click', () => {
+      setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+    });
+    $('#loginForm').addEventListener('submit', login);
+    $('#logoutBtn').addEventListener('click', () => {
+      saveSession('');
+      location.reload();
     });
 
     const search = $('#searchInput');
@@ -715,10 +868,11 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     });
 
     document.addEventListener('keydown', (event) => {
+      if ($('#dashboard').hidden) return;
       if (event.key === '/' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
         event.preventDefault();
-        search.focus();
-        search.select();
+        teamSearch.focus();
+        teamSearch.select();
       } else if (event.key === 'Escape' && document.activeElement === search) {
         search.value = '';
         state.search = '';
@@ -743,7 +897,7 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
       if (state.mode === 'static') {
         try {
           await poll(true);
-          toast(`已重新载入快照 · ${fmtClock(state.lastGenerated)}`);
+          if (state.session) toast(state.connected ? `已更新榜单 · ${fmtClock(state.lastGenerated)}` : '暂时无法更新榜单');
         } finally {
           btn.classList.remove('busy');
         }
@@ -784,9 +938,13 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
   }
 
   async function init() {
+    let theme = 'dark';
     try {
       state.paused = localStorage.getItem(STORE_PAUSED) === '1';
-    } catch (e) { state.paused = false; }
+      if (localStorage.getItem(STORE_THEME) === 'light') theme = 'light';
+    } catch { /* optional preferences */ }
+    try { state.session = sessionStorage.getItem(STORE_SESSION) || ''; } catch { /* optional storage */ }
+    setTheme(theme);
     if (state.paused) {
       const btn = $('#pauseBtn');
       if (btn) btn.textContent = '恢复刷新';
@@ -800,9 +958,14 @@ import { buildSnapshot } from './snapshot-client.js?v=2';
     setupInteractions();
     await detectMode();
     applyModeChrome();
+    if (state.mode === 'local') showDashboard();
+    else if (!state.session) {
+      $('#loginView').hidden = false;
+      $('#loginPassword').focus();
+    }
     await poll(true);
 
-    setInterval(() => poll(false), state.mode === 'static' ? STATIC_POLL_MS : POLL_MS);
+    setInterval(() => poll($('#dashboard').hidden), state.mode === 'static' ? STATIC_POLL_MS : POLL_MS);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) poll(false);
     });

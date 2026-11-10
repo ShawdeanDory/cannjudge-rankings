@@ -1,17 +1,19 @@
-# Cloudflare自动更新
+# Cloudflare Worker
 
-Worker按公开接口和榜单分页转发响应，边缘缓存60秒。浏览器每60秒发起更新，合并与排序在浏览器完成。仅允许本赛事总榜、题目列表、赛事信息和10道题的排名接口。页面从后台恢复时立即检查更新，正在进行的请求自动避免重叠。
+Worker 在验证会话后转发赛事公开榜单接口，仍按接口和分页分别缓存 60 秒。浏览器负责合并分页。定时采样由 GitHub Actions 抓取，经 `/record` 写入 SQLite Durable Object，保存最近 26 小时的得分快照和最后一份完整榜单。
 
-## 部署与验证
+## 部署
 
-在此目录运行`npm ci`，再运行`npx wrangler login --device --scopes account:read user:read workers:write workers_scripts:write workers_routes:write`并完成设备授权。运行`npm test`通过后，使用`npm run deploy`部署。公开地址写入`docs/config.js`，随后提交并推送以触发Pages发布。
+1. 使用 Node.js 24，在 `worker/` 运行 `npm ci` 和 `npm test`，然后使用 `npx wrangler login` 登录管理现有 Worker 的 Cloudflare 账户。
+2. 在仓库目录以外准备一个临时的环境变量文件，填入以下三个值。用 `npx wrangler deploy --secrets-file <文件路径>` 部署，并删除临时文件。
 
-2026年11月10日修复记录。原聚合Worker在持续访问中返回Cloudflare1102资源超限错误，页面因此使用11:50的备用快照。修复版将完整榜单的JSON处理移到`docs/snapshot-client.js`，Worker每次仅流式转发一页数据。边缘缓存按接口及分页分别保存，浏览器每轮重新检查所有榜单。
+   | Secret | 值 |
+   | --- | --- |
+   | `DASHBOARD_PASSWORD` | 队伍共享的访问密码 |
+   | `SESSION_SECRET` | 独立随机值，至少 32 个字符 |
+   | `COLLECTOR_SECRET` | 另一独立随机值，与 GitHub Actions 仓库同名 secret 一致 |
 
-本地自动验证覆盖分页合并、不完整分页拒绝更新、接口路径及方法和来源限制。
+3. 核对 `docs/config.js` 中的 Worker 地址和 `.github/workflows/rankings-pages.yml` 中的采样上传地址。如果 Pages 使用不同域名，在 `wrangler.jsonc` 的 `vars` 中设置 `DASHBOARD_ORIGIN`（仅协议和主机）。
+4. 完成 [Pages 部署](../README-排名看板.md#在线部署)。
 
-## 线上复测
-
-2026年11月10日已部署流式分页代理，Cloudflare版本为`8444544b-8965-4ff0-bc87-6dca23dfb379`，Pages功能修复提交为`2aa72c1`。真实代理抓取测试得到595支队伍、10道题且全部分页完整。本地4项自动检查通过，包括新增的流式响应与分页缓存回归。
-
-保持线上页面打开且未手动刷新，观察更新时间依次为12:37:52、12:40:41、12:41:48，均显示“Cloudflare自动更新”。浏览器日志在12:37:52后的观察窗口无新增错误或警告。复测窗口结束时总榜显示595支队伍。该结果覆盖本次多轮刷新窗口。
+登录会话有效期为 24 小时，修改密码或 `SESSION_SECRET` 会令已有会话失效。登录按 IP 和全站总次数限流。页面退出登录会清除该标签页的会话。
