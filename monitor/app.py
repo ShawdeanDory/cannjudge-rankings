@@ -200,6 +200,7 @@ class Monitor:
                     "id": pid,
                     "name": str(problem.get("name") or ""),
                     "title": str(problem.get("title") or problem.get("name") or pid),
+                    "difficulty": problem.get("difficulty"),
                 }
             )
         if not cleaned:

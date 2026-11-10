@@ -3,31 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>CANNJudge 实时排名监视器</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <div class="ambient" aria-hidden="true"></div>
 
+  <main class="access-view" id="accessView" hidden>
+    <form class="panel access-card" id="accessForm">
+      <h1>CANNJudge 排名看板</h1>
+      <label for="accessCode">队内口令</label>
+      <input id="accessCode" type="password" autocomplete="off" required>
+      <button class="btn" type="submit">查看榜单</button>
+      <p id="accessMessage" role="status"></p>
+    </form>
+  </main>
+
+  <div id="dashboard" hidden>
   <header class="topbar">
-    <div class="brand">
-      <div class="brand-logo">CJ</div>
-      <div class="brand-text">
-        <h1>CANNJudge <em>实时排名</em></h1>
-        <p id="contestLine">正在连接本地服务…</p>
-      </div>
-    </div>
     <div class="topbar-actions">
       <div class="mode-badge" id="modeBadge">连接中</div>
       <div class="live" id="liveBadge"><i></i><span id="liveText">连接中</span><a id="liveUpdateLink" class="live-action" target="_blank" rel="noreferrer" hidden>立即更新</a></div>
-      <label class="field">
-        <span>我的队伍</span>
-        <select id="teamSelect" aria-label="选择我的队伍">
+      <div class="field">
+        <label for="teamSearch">查询队伍</label>
+        <input id="teamSearch" type="search" placeholder="输入队名" autocomplete="off" spellcheck="false">
+        <select id="teamSelect" aria-label="选择查询队伍">
           <option value="">加载中…</option>
         </select>
-      </label>
+      </div>
+      <button class="btn ghost" id="themeBtn" type="button">浅色模式</button>
       <button class="btn ghost" id="pauseBtn" type="button">暂停刷新</button>
       <button class="btn" id="refreshBtn" type="button">
         <span class="btn-spinner" aria-hidden="true"></span>
@@ -38,13 +44,13 @@
 
   <main class="wrap">
     <div class="stale-banner" id="staleBanner" hidden>
-      <span>当前展示的是 <b id="staleAge">–</b> 分钟前的快照。GitHub 的定时任务可能延迟，浏览器刷新不会触发它。</span>
+      <span>当前展示的是 <b id="staleAge">–</b> 分钟前的备用快照。浏览器刷新会重试实时数据。</span>
       <a id="staleAction" target="_blank" rel="noreferrer">立即运行 Actions 更新 →</a>
     </div>
 
-    <section class="hero" id="hero" aria-label="我的排名">
+    <section class="hero" id="hero" aria-label="查询队伍总排名">
       <div class="hero-main">
-        <div class="hero-label">我的总排名</div>
+        <div class="hero-label">查询队伍总排名</div>
         <div class="hero-rank">
           <span class="hero-hash">#</span><span id="heroRank">–</span><span class="hero-total" id="heroTotal">/ –</span>
         </div>
@@ -65,8 +71,8 @@
       </div>
     </section>
 
-    <section class="my-strip" id="myStrip" aria-label="我的排名速览">
-      <span class="strip-label">我的排名</span>
+    <section class="my-strip" id="myStrip" aria-label="查询队伍排名速览">
+      <span class="strip-label">查询队伍</span>
       <span class="strip-rank" id="stripRank">#–</span>
       <span class="strip-team" id="stripTeam">–</span>
       <span class="strip-meta" id="stripMeta">–</span>
@@ -94,22 +100,38 @@
               <th>队伍</th>
               <th class="num col-pass">通过</th>
               <th class="num">总分</th>
+              <th class="num col-delta">较 5 小时前</th>
               <th class="num col-attempt">尝试</th>
               <th class="num col-subs">提交</th>
             </tr>
           </thead>
           <tbody id="totalBody">
-            <tr><td colspan="6" class="empty">正在加载总排行榜…</td></tr>
+            <tr><td colspan="7" class="empty">正在加载总排行榜…</td></tr>
           </tbody>
         </table>
       </div>
       <div class="panel-foot" id="totalFoot">–</div>
     </section>
 
+    <section class="panel" aria-labelledby="historyTitle">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2 id="historyTitle">总榜前十 · 近 24 小时各题变动</h2>
+          <p id="historyMeta">正在读取历史快照…</p>
+        </div>
+      </div>
+      <div class="table-scroll history-scroll" id="historyTable" hidden>
+        <table class="rank-table">
+          <thead id="historyHead"></thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+      </div>
+    </section>
+
     <div class="section-head">
       <div>
         <h2>各题排名</h2>
-        <p>每道题一个独立区域 · 按该题得分排名 · 我的队伍高亮置顶显示</p>
+        <p>每道题一个独立区域 · 按该题得分排名 · 高亮当前查询的队伍</p>
       </div>
       <div class="section-badge" id="problemCount">– 道题</div>
     </div>
@@ -127,10 +149,11 @@
       <button id="quitBtn" class="link-btn" type="button">退出程序</button>
     </span>
   </footer>
+  </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script src="config.js?v=2"></script>
-  <script type="module" src="app.js?v=2"></script>
+  <script src="config.js?v=4"></script>
+  <script type="module" src="app.js?v=4"></script>
 </body>
 </html>
