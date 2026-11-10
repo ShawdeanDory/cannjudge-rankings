@@ -26,13 +26,14 @@ test('replays older public peaks, moves the first-place reward and flags only re
   mergeArchive(archive, JSON.parse(JSON.stringify(encodeArchive(original))));
 
   const { selected, ranked } = replayScores(current, archive, 'us');
-  assert.equal(selected.replay, 21000);
+  assert.equal(selected.replay, 21600);
   assert.equal(selected.replayRank, 2);
   assert.deepEqual(selected.drops, []);
+  assert.deepEqual(replayScores(current, archive, 'other').ranked.map(row => row.replay), ranked.map(row => row.replay));
   assert.equal(ranked[0].team, 'other');
   assert.equal(ranked[0].replay, 35500);
   assert.deepEqual(ranked[0].drops.map(drop => [drop.problem.id, drop.earlier.score, drop.base]), [['hard', 8500, 6000]]);
-  assert.deepEqual(ranked[2].thresholds.map(item => [item.problem.id, item.score]), [['hard', 7001]]);
+  assert.deepEqual(ranked[2].thresholds.map(item => [item.problem.id, item.score]), [['hard', 7201]]);
 });
 
 test('one missing question can overtake by also removing the selected team’s first-place bonus', () => {

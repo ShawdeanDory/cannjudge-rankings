@@ -355,67 +355,28 @@ a:hover { text-decoration: underline; }
 }
 .hero-side-hint { letter-spacing: 0; text-transform: none; color: var(--muted-2); font-size: 11.5px; }
 
-.hero-chips {
+.overview-columns, .overview-list li {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
-  gap: 9px;
+  grid-template-columns: minmax(0, 1fr) minmax(60px, 14%) minmax(65px, 17%) minmax(60px, 14%);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
 }
-.hero-chip {
-  position: relative;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: rgba(9, 15, 28, 0.62);
-  cursor: pointer;
-  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
-  min-height: 74px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 4px;
-}
-.hero-chip:hover { border-color: rgba(79, 140, 255, 0.55); transform: translateY(-2px); }
-.hero-chip .chip-name {
-  font-size: 11.5px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.hero-chip .chip-rank {
-  font-size: 19px;
-  font-weight: 750;
-  font-variant-numeric: tabular-nums;
-  color: #fff;
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.hero-chip .chip-rank small { font-size: 11px; color: var(--muted); font-weight: 500; }
-.hero-chip .chip-score { font-size: 11.5px; color: #9fb3d8; font-variant-numeric: tabular-nums; }
-.hero-chip .chip-score b { color: #d7e4ff; font-weight: 650; }
-.hero-chip.unsubmitted .chip-rank { color: var(--muted-2); font-size: 15px; }
-.hero-chip.is-me { border-color: rgba(79, 140, 255, 0.5); background: rgba(79, 140, 255, 0.1); }
-.hero-chip .chip-dot {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--muted-2);
-}
-.hero-chip .chip-dot.ok { background: var(--good); box-shadow: 0 0 8px rgba(52, 211, 153, 0.7); }
-.hero-chip .chip-dot.bad { background: var(--bad); }
-.hero-chip .chip-dot.warn { background: var(--warn); }
-
-.skeleton-chip {
-  cursor: default;
-  background: linear-gradient(100deg, rgba(30, 42, 66, 0.5) 20%, rgba(45, 62, 95, 0.6) 40%, rgba(30, 42, 66, 0.5) 60%);
-  background-size: 220% 100%;
-  animation: shimmer 1.4s infinite;
-}
-@keyframes shimmer { to { background-position: -120% 0; } }
+.overview-columns { color: var(--muted); font-size: 11px; }
+.overview-list, .activity-list { list-style: none; margin: 0; padding: 0; }
+.overview-list li, .activity-list li { border-top: 1px solid var(--line); }
+.overview-list li > :not(:first-child), .overview-columns > :not(:first-child) { text-align: right; }
+.overview-list li > b { color: var(--info-text); }
+.overview-list small, .replay-scroll td.num small { display: block; color: var(--muted); font-size: 11px; }
+.overview-name { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; min-width: 0; }
+.overview-name button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.activity { margin-top: 10px; }
+.activity h2 { margin: 0; font-size: 14px; }
+.activity p { margin: 3px 0 6px; color: var(--muted); font-size: 11px; }
+.activity-list { max-height: 345px; overflow: auto; }
+.activity-list li { display: grid; gap: 2px; padding: 7px 4px 7px 0; font-size: 12px; color: var(--muted); }
+.activity-list b { color: var(--text); margin-right: 8px; }
+.activity-list time { font-variant-numeric: tabular-nums; }
 
 /* ---------- 面板 ---------- */
 .panel-head {
@@ -525,7 +486,8 @@ a:hover { text-decoration: underline; }
 .rank.r3 { color: #2b1607; background: linear-gradient(135deg, #ffc79a, #d98a4c); }
 
 .team-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.team-name { overflow: hidden; text-overflow: ellipsis; max-width: 340px; }
+.team-name { display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: min(120px, 100%); vertical-align: middle; }
+.rank-table .col-team { width: 126px; }
 .me-tag {
   flex: none;
   padding: 1px 6px;
@@ -681,7 +643,7 @@ a:hover { text-decoration: underline; }
 .prob-scroll .rank-table th { padding: 8px 14px; }
 .prob-scroll .rank-table td { padding: 7.5px 14px; font-size: 12.5px; }
 .prob-scroll .col-rank { width: 70px; }
-.prob-scroll .team-name { max-width: 210px; }
+
 
 .prob-foot {
   display: flex;
@@ -770,12 +732,11 @@ a:hover { text-decoration: underline; }
   #totalScroll .col-rank { width: 56px; }
   #totalScroll th.num { width: 58px; }
   #totalScroll th.col-delta { width: 88px; }
-  #totalScroll .team-name { min-width: 0; max-width: 100%; }
   #replayTable .col-rank { width: 70px; }
   #replayTable th.num { width: 72px; }
   #replayTable .col-replay-drop { width: 88px; }
   #replayTable .col-replay-threshold { width: 132px; }
-  #replayTable :is(td:nth-child(2), details) { white-space: normal; overflow-wrap: anywhere; }
+  #replayTable details { white-space: normal; overflow-wrap: anywhere; }
 }
 
 @media (max-width: 1180px) {
@@ -796,19 +757,17 @@ a:hover { text-decoration: underline; }
   #totalScroll .rank-table, .prob-scroll .rank-table { table-layout: fixed; width: 100%; }
   #totalScroll .col-rank, .prob-scroll .col-rank { width: 46px; }
   #totalScroll th.num, #totalScroll td.num, .prob-scroll th.num, .prob-scroll td.num { width: 58px; }
-  #totalScroll .col-delta { width: 84px; }
-  #totalScroll .team-name, .prob-scroll .team-name { max-width: 100%; }
+  #totalScroll th.col-delta, #totalScroll td.col-delta { width: 84px; }
+  #totalScroll .col-team { width: auto; }
   #totalScroll th, #totalScroll td, .prob-scroll th, .prob-scroll td { padding-left: 8px; padding-right: 8px; }
   .hero { padding: 18px; }
   .panel-head { flex-direction: column; align-items: stretch; }
   .search input { width: 100%; }
   .search { width: 100%; }
-  .hero-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .my-strip { gap: 8px; padding: 8px 12px; }
   .strip-hint { display: none; }
   .strip-team { max-width: 40vw; }
   .rank-table td, .rank-table th { padding-left: 10px; padding-right: 10px; }
-  .team-name { max-width: 140px; }
   .footer { width: calc(100% - 24px); }
 }
 
@@ -847,10 +806,10 @@ a:hover { text-decoration: underline; }
 [data-theme="light"] :is(.hero, .toast) { background: linear-gradient(135deg, #f4f8ff, #e8f0ff); box-shadow: var(--shadow); }
 [data-theme="light"] .hero-rank { text-shadow: none; }
 [data-theme="light"] #heroRank { background: none; color: var(--info-text); }
-[data-theme="light"] :is(.hero-meta b, .strip-rank, .strip-team, .strip-meta b, .hero-chip .chip-rank, .chip-score b, .my-chip .val) { color: var(--strong-text); }
-[data-theme="light"] :is(.hero-meta, .hero-chip .chip-score, .hero-chip.unsubmitted .chip-rank, .my-chip .val small) { color: var(--muted); }
+[data-theme="light"] :is(.hero-meta b, .strip-rank, .strip-team, .strip-meta b, .my-chip .val) { color: var(--strong-text); }
+[data-theme="light"] :is(.hero-meta, .my-chip .val small) { color: var(--muted); }
 [data-theme="light"] :is(.hero-label, .hero-side-head, .hero-hash, .strip-label, .my-chip .lbl, .prob-index, .me-tag) { color: var(--info-text); }
-[data-theme="light"] :is(.btn.ghost, .hero-chip, .search, .section-badge, .my-chip.none, .strip-hint kbd, .mode-badge) { background: var(--input-bg); }
+[data-theme="light"] :is(.btn.ghost, .search, .section-badge, .my-chip.none, .strip-hint kbd, .mode-badge) { background: var(--input-bg); }
 [data-theme="light"] :is(.mode-badge.local, .mode-badge.static) { color: var(--info-text); }
 [data-theme="light"] :is(.live, .hero-delta.up) { color: var(--positive-text); }
 [data-theme="light"] :is(.live.offline, .hero-delta.down, .link-btn:hover) { color: var(--negative-text); }
@@ -858,4 +817,3 @@ a:hover { text-decoration: underline; }
 [data-theme="light"] .rank-table th { background: #eff4fc; }
 [data-theme="light"] :is(.rank-table td, .rank-table tr.me td, .rank:not(.r1, .r2, .r3)) { color: var(--text); }
 [data-theme="light"] .me-tag { background: #d9e8ff; }
-[data-theme="light"] .skeleton-chip { background: var(--line); }

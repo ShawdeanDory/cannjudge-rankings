@@ -3,7 +3,7 @@ name: Rankings snapshot & Pages
 on:
   schedule:
     # 每 10 分钟采样一次，错开整点。
-    - cron: "2-52/10 * * * *"
+    - cron: "2,12,22,32,42,52 * * * *"
   workflow_dispatch:
   push:
     branches: [main]
@@ -55,21 +55,24 @@ jobs:
         run: |
           mkdir -p _site
           cp docs/index.html docs/style.css docs/app.js docs/config.js docs/snapshot-client.js docs/favicon.svg _site/
-          cp docs/score-replay.js _site/
-          inputs=(docs/score-peaks.json)
-          previous="$RUNNER_TEMP/previous-score-peaks.json"
-          status=$(curl --silent --show-error --location --retry 2 --max-time 30 \
-            --header 'Cache-Control: no-cache' --output "$previous" --write-out '%{http_code}' \
-            "${PAGES_BASE_URL%/}/score-peaks.json?run=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT")
-          case "$status" in
-            200) inputs+=("$previous") ;;
-            404) echo "No published score archive yet; using the repository seed." ;;
-            *) echo "::error::Could not read the published archive (HTTP $status)"; exit 1 ;;
-          esac
+          cp docs/score-replay.js docs/ranking-history.js _site/
+          for name in score-peaks.json ranking-history.json; do
+            previous="$RUNNER_TEMP/$name"
+            status=$(curl --silent --show-error --location --retry 2 --max-time 30 \
+              --header 'Cache-Control: no-cache' --output "$previous" --write-out '%{http_code}' \
+              "${PAGES_BASE_URL%/}/$name?run=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT")
+            case "$status" in
+              200) ;;
+              404) cp "docs/$name" "$previous" ;;
+              *) echo "::error::Could not read $name (HTTP $status)"; exit 1 ;;
+            esac
+          done
+          samples=()
           if [[ "$GITHUB_EVENT_NAME" != 'push' ]]; then
-            inputs+=("$RUNNER_TEMP/snapshot.json")
+            samples+=("$RUNNER_TEMP/snapshot.json")
           fi
-          node scripts/build_score_peaks.mjs _site/score-peaks.json "${inputs[@]}"
+          node scripts/build_score_peaks.mjs _site/score-peaks.json docs/score-peaks.json "$RUNNER_TEMP/score-peaks.json" "${samples[@]}"
+          node scripts/build_ranking_history.mjs _site/ranking-history.json "$RUNNER_TEMP/ranking-history.json" "${samples[@]}"
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

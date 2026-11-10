@@ -455,7 +455,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path in ("/", "/index.html"):
                 self._send_file(DOCS_ROOT / "index.html", "text/html; charset=utf-8")
-            elif path in ("/style.css", "/app.js", "/config.js", "/snapshot-client.js", "/score-replay.js", "/score-peaks.json", "/favicon.svg", "/favicon.ico"):
+            elif path in ("/style.css", "/app.js", "/config.js", "/snapshot-client.js", "/score-replay.js", "/score-peaks.json",
+                          "/ranking-history.js", "/ranking-history.json", "/favicon.svg", "/favicon.ico"):
                 name = "favicon.svg" if path.startswith("/favicon") else path.lstrip("/")
                 self._send_file(DOCS_ROOT / name, None)
             elif path == "/data/snapshot.json":

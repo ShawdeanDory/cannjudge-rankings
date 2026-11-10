@@ -1,5 +1,6 @@
 import { buildSnapshot } from './snapshot-client.js?v=4';
-import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScores } from './score-replay.js?v=1';
+import { createArchive, encodeArchive, isPass, mergeArchive, observeSnapshot, problemPeaks, replayScores } from './score-replay.js?v=2';
+import { ACTIVITY_LIMIT, emptyHistory, fiveHourBaseline, recordRanking } from './ranking-history.js?v=1';
 /* CANNJudge 实时排名监视器 —— 纯前端渲染逻辑 */
 (() => {
   'use strict';
@@ -17,6 +18,7 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
   const scoreArchive = createArchive();
   let archiveReady;
   let sharedArchiveAt = 0;
+  let recentHistory = emptyHistory();
 
   const state = {
     mode: 'unknown',
@@ -35,6 +37,7 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
     cardKeys: new Map(),
     cardTeam: null,
     cards: new Map(),
+    problemPeaks: new Map(),
     problemsSignature: '',
     teamSignature: '',
     lastRank: null,
@@ -42,18 +45,6 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
     deltaTimer: null,
     lastGenerated: 0,
     toastTimer: null,
-  };
-
-  const STATUS_ZH = {
-    Pass: '通过',
-    Accepted: '通过',
-    Fail: '未通过',
-    'Wrong Answer': '答案错误',
-    'Compile Error': '编译错误',
-    'Runtime Error': '运行错误',
-    'Time Limit Exceeded': '超时',
-    'Memory Limit Exceeded': '超内存',
-    'System Error': '系统错误',
   };
 
   /* ---------- 工具 ---------- */
@@ -70,7 +61,24 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
 
   function scoreDelta(current, previous) {
     const cents = Math.round(current * 100) - Math.round(previous * 100);
-    return `<span class="score-delta ${cents > 0 ? 'up' : cents < 0 ? 'down' : ''}">${cents > 0 ? '+' : ''}${fmtScore(cents / 100)}</span>`;
+    return deltaMarkup(cents, (cents > 0 ? '+' : '') + fmtScore(cents / 100));
+  }
+
+  function deltaMarkup(delta, label) {
+    const direction = delta > 0 ? 'up' : delta < 0 ? 'down' : '';
+    const arrow = delta > 0 ? '▲ ' : delta < 0 ? '▼ ' : '';
+    return `<span class="score-delta ${direction}">${arrow}${label}</span>`;
+  }
+
+  function rankDelta(change) {
+    return change == null ? '–' : deltaMarkup(change, `${Math.abs(change)} 位`);
+  }
+
+  function problemRankDelta(event) {
+    if (!event) return '–';
+    if (event.previousRank == null && event.rank != null) return deltaMarkup(1, '上榜');
+    if (event.previousRank != null && event.rank == null) return deltaMarkup(-1, '掉榜');
+    return event.rank == null ? '–' : rankDelta(event.previousRank - event.rank);
   }
 
   function difficultyBadge(problem) {
@@ -102,19 +110,6 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
     if (diff < 60) return `${diff} 秒前`;
     if (diff < 3600) return `${Math.round(diff / 60)} 分钟前`;
     return `${Math.round(diff / 3600)} 小时前`;
-  }
-
-  function statusClass(status) {
-    const s = String(status || '').toLowerCase();
-    if (s.includes('pass') || s.includes('accept')) return 'ok';
-    if (s.includes('fail') || s.includes('wrong')) return 'bad';
-    if (s.includes('error') || s.includes('limit') || s.includes('timeout')) return 'warn';
-    return 'idle';
-  }
-
-  function statusText(status) {
-    if (!status) return '暂无';
-    return STATUS_ZH[status] || status;
   }
 
   function rankClass(rank) {
@@ -312,7 +307,9 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
 
     document.title = me ? `#${me.rank} ${team} · CANNJudge 实时排名` : 'CANNJudge 实时排名监视器';
 
-    renderHeroChips();
+    const events = new Map(recentHistory.events).get(team) || [];
+    renderActivity(events);
+    renderProblemOverview(events);
   }
 
   function renderHeroDelta(me) {
@@ -342,35 +339,31 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
     state.lastRank = rank;
   }
 
-  function renderHeroChips() {
-    const container = $('#heroChips');
-    const problems = (state.data && state.data.problems) || [];
-    if (!problems.length) return;
+  function renderActivity(events) {
+    const titles = new Map((state.data.problems || []).map(p => [p.id, p.title]));
+    const rows = events.slice(0, ACTIVITY_LIMIT).map(event => `<li>
+      <div><b>${esc(titles.get(event.pid) || event.pid)}</b><time datetime="${new Date(event.time).toISOString()}">${fmtDayTime(event.time)}</time></div>
+      <div>题分 ${scoreDelta(event.score, event.previousScore)} · 题名次 ${problemRankDelta(event)}</div>
+      <div>区间总分 ${event.totalDelta == null ? '–' : scoreDelta(event.totalDelta, 0)} · 总名次 ${rankDelta(event.totalRankDelta)}</div>
+    </li>`);
+    $('#teamActivity').innerHTML = rows.join('') || '<li class="muted">暂无观测到的新提交。</li>';
+  }
 
-    const chips = problems.map((problem) => {
-      const entry = problemEntry(problem.id);
+  function renderProblemOverview(events) {
+    const newest = new Map();
+    for (const event of events) if (!newest.has(event.pid)) newest.set(event.pid, event);
+    $('#problemOverview').innerHTML = (state.data.problems || []).map(problem => {
       const mine = myProblemRow(problem.id);
-      const cls = statusClass(mine && mine.status);
-      const count = entry ? ` / ${entry.total || entry.rows.length}` : '';
-      if (!mine) {
-        const loading = !entry;
-        return `<button type="button" class="hero-chip unsubmitted" data-pid="${esc(problem.id)}" title="${esc(problem.title)}">
-          <span class="chip-dot"></span>
-          <span class="chip-name">${esc(problem.title)}</span>
-          ${difficultyBadge(problem)}
-          <span class="chip-rank">${loading ? '加载中' : '未提交'}<small></small></span>
-          <span class="chip-score">${loading ? '正在读取…' : '暂无成绩'}</span>
-        </button>`;
-      }
-      return `<button type="button" class="hero-chip is-me" data-pid="${esc(problem.id)}" title="${esc(problem.title)} · ${esc(statusText(mine.status))}">
-        <span class="chip-dot ${cls}"></span>
-        <span class="chip-name">${esc(problem.title)}</span>
-        ${difficultyBadge(problem)}
-        <span class="chip-rank">#${mine.rank}<small>${count}</small></span>
-        <span class="chip-score"><b>${fmtScore(mine.score)}</b> 分</span>
-      </button>`;
-    });
-    container.innerHTML = chips.join('');
+      const last = newest.get(problem.id);
+      const change = last?.sid === mine?.sid ? last : null;
+      const peak = state.problemPeaks.get(problem.id);
+      return `<li>
+        <span class="overview-name"><button type="button" class="link-btn" data-pid="${esc(problem.id)}" title="${esc(problem.title)}">${esc(problem.title)}</button>${difficultyBadge(problem)}</span>
+        <span>${isPass(mine) ? '#' + mine.rank : '–'}<small title="上次观测到的提交名次变化">${problemRankDelta(change)}</small></span>
+        <span>${mine ? fmtScore(mine.score) : '–'}<small title="上次观测到的提交分数变化">${change ? scoreDelta(change.score, change.previousScore) : '–'}</small></span>
+        <b title="${peak ? esc(peak.team) : ''}">${peak ? fmtScore(peak.score / 100) : '–'}</b>
+      </li>`;
+    }).join('');
   }
 
   /* ---------- 总排行榜 ---------- */
@@ -378,7 +371,7 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
     const data = state.data;
     if (!data) return;
     const total = data.total || { rows: [], at: null, error: null };
-    const baseline = state.history?.baseline5h;
+    const baseline = fiveHourBaseline(recentHistory, total.at) || state.history?.baseline5h;
     const key = `${total.at}|${total.error}|${myTeam()}|${state.search}|${baseline?.at}|${state.historyError}`;
     if (!force && key === state.totalKey) return;
     state.totalKey = key;
@@ -424,7 +417,7 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
     const foot = $('#totalFoot');
     const error = total.error ? `<span class="warn">最近一次刷新失败，展示的是缓存数据</span>` : '';
     const comparison = baseline ? `5 小时对比基准 ${fmtDayTime(baseline.at * 1000)}`
-      : state.mode === 'local' ? '本地模式无定时历史' : state.historyError ? '历史暂不可用' : '暂无 5 小时前快照';
+      : '暂无接近 5 小时前的总榜快照';
     foot.innerHTML = `<span>更新于 ${fmtClock(total.at)} · ${fmtAgo(total.at)}</span><span>${comparison}</span>${error}`;
   }
 
@@ -454,7 +447,7 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
             <thead>
               <tr>
                 <th class="col-rank">排名</th>
-                <th>队伍</th>
+                <th class="col-team">队伍</th>
                 <th class="num">得分</th>
                 <th class="col-time">提交时间</th>
               </tr>
@@ -503,6 +496,7 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
       el.chip.className = 'my-chip none';
       el.chip.innerHTML = `<span class="lbl">查询队伍</span><span class="val">${entry ? '未提交' : '加载中'}</span>`;
     }
+    const peak = state.problemPeaks.get(problem.id);
 
     const key = `${entry ? entry.at : null}|${entry ? entry.error : null}|${state.team}|${entry ? entry.rows.length : 0}`;
     if (!force && key === state.cardKeys.get(problem.id)) {
@@ -533,6 +527,7 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
     el.count.textContent = entry.total && entry.total !== entry.rows.length
       ? `${entry.rows.length} / ${entry.total} 支队伍`
       : `${entry.rows.length} 支队伍`;
+    if (peak) el.count.textContent += ` · 历史峰值 ${fmtScore(peak.score / 100)} · ${peak.team}`;
     el.updated.innerHTML = entry.error
       ? `<span class="warn">刷新失败 · 缓存于 ${fmtClock(entry.at)}</span>`
       : `更新于 ${fmtClock(entry.at)}`;
@@ -574,6 +569,15 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
     } catch { /* continue with observed browser samples */ }
   }
 
+  async function loadRecentHistory() {
+    try {
+      const response = await fetch('ranking-history.json', { cache: 'no-cache', signal: AbortSignal.timeout(8000) });
+      if (!response.ok) return;
+      const history = await response.json();
+      if (Array.isArray(history.samples) && Array.isArray(history.events)) recentHistory = history;
+    } catch { /* collect new observations during this visit */ }
+  }
+
   function renderReplay() {
     const table = $('#replayTable');
     const meta = $('#replayMeta');
@@ -595,7 +599,8 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
     const open = new Set([...body.querySelectorAll('details[open]')].map(el => el.dataset.key));
     const details = (key, label, items) => `<details data-key="${esc(key)}"${open.has(key) ? ' open' : ''}>
       <summary>${label}</summary><ul>${items.join('')}</ul></details>`;
-    body.innerHTML = ranked.filter(row => row.replayRank <= 10 || row.drops.length || row === selected).map(row => {
+    const query = state.search.trim().toLowerCase();
+    body.innerHTML = ranked.filter(row => row.team.toLowerCase().includes(query)).map(row => {
       const drops = row.drops.length ? details('drop:' + row.team, `${row.drops.length} 题`, row.drops.map(drop =>
         `<li><b>${esc(drop.problem.title)}</b> ${fmtScore(drop.earlier.score / 100)} → ${fmtScore(drop.base / 100)}
           <small>旧提交 ${fmtDayTime(drop.earlier.submittedAt)} · 新提交 ${fmtDayTime(drop.latest.time)} · 基础分差折合 ${fmtScore((drop.earlier.score - drop.base) * drop.weight / 100)} 分</small></li>`)) : '–';
@@ -603,9 +608,9 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
       const thresholds = first ? details('threshold:' + row.team, `${esc(first.problem.title)} ${fmtScore(first.score / 100)}`,
         row.thresholds.map(item => `<li>${esc(item.problem.title)} ≥ ${fmtScore(item.score / 100)} 基础分</li>`)) : '–';
       return `<tr class="${row === selected ? 'me' : ''}">
-        <td>#${row.replayRank}</td><td>${esc(row.team)}</td><td class="num">${fmtScore(row.score)}</td>
-        <td class="num">${fmtScore(row.replay / 100)}</td><td>${drops}</td><td>${thresholds}</td></tr>`;
-    }).join('');
+        <td>#${row.replayRank}</td><td><span class="team-name" title="${esc(row.team)}">${esc(row.team)}</span></td><td class="num">${fmtScore(row.score)}</td>
+        <td class="num">${fmtScore(row.replay / 100)}<small>${scoreDelta(row.replay / 100, row.score)}<br>${rankDelta(row.rank - row.replayRank)}</small></td><td>${drops}</td><td>${thresholds}</td></tr>`;
+    }).join('') || '<tr><td colspan="6" class="empty">没有匹配的队伍</td></tr>';
   }
 
   function renderHistory() {
@@ -631,7 +636,7 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
     });
     const body = $('#historyBody');
     const open = new Set([...body.querySelectorAll('details[open]')].map(el => el.dataset.key));
-    $('#historyHead').innerHTML = `<tr><th scope="col">队伍</th>${problems.map(problem =>
+    $('#historyHead').innerHTML = `<tr><th scope="col" class="col-team">队伍</th>${problems.map(problem =>
       `<th scope="col">${esc(problem.title)} ${difficultyBadge(problem)}</th>`).join('')}</tr>`;
     body.innerHTML = top.map(({ rank, team }) => {
       const teamHistory = byTeam.get(team);
@@ -656,7 +661,7 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
           <summary>${label} ${delta}<small>${changes} 次变动</small></summary><ol>${list.join('')}</ol>
         </details></td>`;
       });
-      return `<tr${team === myTeam() ? ' class="me"' : ''}><th scope="row">#${rank} ${esc(team)}</th>${cells.join('')}</tr>`;
+      return `<tr${team === myTeam() ? ' class="me"' : ''}><th scope="row"><span class="team-name" title="${esc(team)}">#${rank} ${esc(team)}</span></th>${cells.join('')}</tr>`;
     }).join('');
   }
 
@@ -723,9 +728,11 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
     state.lastGenerated = data.generated_at;
     state.connected = true;
 
+    observeSnapshot(scoreArchive, data);
+    recordRanking(recentHistory, data);
+    state.problemPeaks = problemPeaks(data, scoreArchive);
     renderTeamOptions();
     renderAll(first);
-    observeSnapshot(scoreArchive, data);
     try { localStorage.setItem(STORE_PEAKS, JSON.stringify(encodeArchive(scoreArchive))); } catch { /* optional storage */ }
     renderReplay();
     updateLiveStatus();
@@ -758,7 +765,7 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
     if (state.inflight || $('#dashboard').hidden) return;
     if (state.paused && !force) return;
     state.inflight = true;
-    archiveReady ??= loadScoreArchive();
+    archiveReady ??= Promise.all([loadScoreArchive(), loadRecentHistory()]);
     try {
       if (state.mode === 'static') {
         const data = await fetchOnlineSnapshot();
@@ -863,6 +870,7 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
         const scroller = $('#totalScroll');
         if (scroller) scroller.scrollTop = 0;
         renderTotal(true);
+        if (state.data) renderReplay();
       }, 120);
     });
 
@@ -877,6 +885,7 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
         state.search = '';
         state.totalKey = '';
         renderTotal(true);
+        if (state.data) renderReplay();
         search.blur();
       }
     });
@@ -919,10 +928,10 @@ import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScor
       setTimeout(tick, 900);
     });
 
-    $('#heroChips').addEventListener('click', (event) => {
-      const chip = event.target.closest('.hero-chip[data-pid]');
-      if (!chip) return;
-      const target = document.getElementById('prob-' + chip.dataset.pid);
+    $('#problemOverview').addEventListener('click', (event) => {
+      const problem = event.target.closest('button[data-pid]');
+      if (!problem) return;
+      const target = document.getElementById('prob-' + problem.dataset.pid);
       if (!target) return;
       target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       target.classList.add('target');

@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark light">
   <title>CANNJudge 实时排名监视器</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
   <div class="ambient" aria-hidden="true"></div>
@@ -56,17 +56,20 @@
         </div>
         <div class="hero-meta" id="heroMeta">正在获取榜单数据…</div>
         <div class="hero-delta" id="heroDelta" aria-live="polite"></div>
+        <section class="activity" aria-labelledby="activityTitle">
+          <h2 id="activityTitle">队伍最新动态</h2>
+          <p>最近 10 次观测到的新提交 · 总榜变化按采样区间计算</p>
+          <ol id="teamActivity" class="activity-list"><li>正在读取动态…</li></ol>
+        </section>
       </div>
       <div class="hero-side">
         <div class="hero-side-head">
           <span>各题排名</span>
-          <span class="hero-side-hint">点击卡片跳到对应区域</span>
+          <span class="hero-side-hint">点击题目查看详细排名</span>
         </div>
-        <div class="hero-chips" id="heroChips">
-          <div class="hero-chip skeleton-chip"></div>
-          <div class="hero-chip skeleton-chip"></div>
-          <div class="hero-chip skeleton-chip"></div>
-          <div class="hero-chip skeleton-chip"></div>
+        <div class="problem-overview">
+          <div class="overview-columns" aria-hidden="true"><span>题目</span><span>当前名次</span><span>当前基础分</span><span>历史峰值</span></div>
+          <ol id="problemOverview" class="overview-list"><li>正在读取题目…</li></ol>
         </div>
       </div>
     </section>
@@ -98,7 +101,7 @@
             <thead>
               <tr>
                 <th class="col-rank">排名</th>
-                <th>队伍</th>
+                <th class="col-team">队伍</th>
                 <th class="num col-pass">通过</th>
                 <th class="num">总分</th>
                 <th class="num col-delta">较 5 小时前</th>
@@ -126,7 +129,7 @@
             <thead>
               <tr>
                 <th scope="col" class="col-rank">回放名次</th>
-                <th scope="col">队伍</th>
+                <th scope="col" class="col-team">队伍</th>
                 <th scope="col" class="num">当前总分</th>
                 <th scope="col" class="num">回放总分</th>
                 <th scope="col" class="col-replay-drop">已观测回退</th>
@@ -136,7 +139,7 @@
             <tbody id="replayBody"></tbody>
           </table>
         </div>
-        <div class="panel-foot">回放保留查询队伍的当前提交，其余队伍逐题取公开峰值并重算第一名奖励。口径与分数会随采样变化。未公开的成绩无法估算。</div>
+        <div class="panel-foot">所有队伍均逐题取已观测的公开峰值，再重算每题第一名奖励。单题反超门槛以查询队伍的回放总分为基准。</div>
       </section>
     </div>
 
@@ -181,6 +184,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="config.js?v=4"></script>
-  <script type="module" src="app.js?v=6"></script>
+  <script type="module" src="app.js?v=7"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-const isPass = row => ['Pass', 'Accepted'].includes(row?.status);
+export const isPass = row => ['Pass', 'Accepted'].includes(row?.status);
 const cents = score => Math.round(score * 100);
 const byScore = (a, b) => b.score - a.score || a.submittedAt - b.submittedAt || a.id.localeCompare(b.id);
 
@@ -40,7 +40,7 @@ export function encodeArchive(archive) {
   };
 }
 
-function currentRows(data, problem) {
+export function currentRows(data, problem) {
   const result = new Map();
   for (const row of data.by_problem[problem.id].rows) {
     if (!result.has(row.team)) result.set(row.team, row);
@@ -48,13 +48,13 @@ function currentRows(data, problem) {
   return result;
 }
 
-function complete(data) {
+export function completeSnapshot(data) {
   return data?.ready && data.total?.rows?.length && !data.total.error && data.problems?.length &&
     data.problems.every(p => data.by_problem?.[p.id]?.complete && !data.by_problem[p.id].error);
 }
 
 export function observeSnapshot(archive, data) {
-  if (!complete(data)) return;
+  if (!completeSnapshot(data)) return;
   const observedAt = Math.floor(data.generated_at);
   if (!observedAt) return;
   archive.firstAt = Math.min(archive.firstAt || observedAt, observedAt);
@@ -69,6 +69,19 @@ export function observeSnapshot(archive, data) {
   }
 }
 
+export function problemPeaks(data, archive) {
+  const result = new Map();
+  for (const problem of data.problems || []) {
+    let highest;
+    for (const [team, entries] of archive.problems.get(problem.id) || []) {
+      const peak = entries[0];
+      if (peak && (!highest || peak.score > highest.score)) highest = { team, score: peak.score };
+    }
+    if (highest) result.set(problem.id, highest);
+  }
+  return result;
+}
+
 function threshold(problem, challenger, selected) {
   const { weight, leader, leaderScore } = problem;
   const gap = selected.replay - challenger.replay;
@@ -79,7 +92,7 @@ function threshold(problem, challenger, selected) {
 }
 
 export function replayScores(data, archive, selectedTeam) {
-  if (!complete(data) || !data.problems.every(p => [1, 2, 3].includes(Number(p.difficulty)))) return null;
+  if (!completeSnapshot(data) || !data.problems.every(p => [1, 2, 3].includes(Number(p.difficulty)))) return null;
   const asOf = Math.floor(data.generated_at);
   const teams = new Map(data.total.rows.map(row => [row.team, {
     ...row, replay: 0, replayPass: 0, drops: [], missing: [], thresholds: [],
@@ -97,7 +110,7 @@ export function replayScores(data, archive, selectedTeam) {
       const earlier = peaks.find(peak => latest?.sid && peak.id !== latest.sid &&
         peak.submittedAt < Date.parse(latest.time) && peak.score - base >= 500);
       if (earlier) row.drops.push({ problem, earlier, latest, base, weight });
-      const restore = row.team !== selectedTeam && peaks[0]?.score > base ? peaks[0] : null;
+      const restore = peaks[0]?.score > base ? peaks[0] : null;
       if (isPass(latest) || restore) {
         const score = restore?.score ?? base;
         row.replay += weight * score;
