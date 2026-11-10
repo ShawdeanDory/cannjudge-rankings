@@ -2,8 +2,8 @@ name: Rankings snapshot & Pages
 
 on:
   schedule:
-    # GitHub Actions 的最短计划间隔为 5 分钟；实际触发可能再延迟数分钟
-    - cron: "*/5 * * * *"
+    # GitHub Actions 的最短计划间隔为 5 分钟；错开整点，减少被队列延迟/丢弃的概率
+    - cron: "2-57/5 * * * *"
   workflow_dispatch:
   push:
     branches: [main]
@@ -20,7 +20,7 @@ permissions:
 
 concurrency:
   group: rankings-pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:

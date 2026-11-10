@@ -146,11 +146,58 @@
     $('#liveText').textContent = text;
   }
 
+  function repoWorkflowUrl() {
+    const host = location.hostname;
+    if (!host.endsWith('.github.io')) return '';
+    const owner = host.slice(0, -'.github.io'.length);
+    const segments = location.pathname.split('/').filter(Boolean);
+    const repo = segments.length ? segments[0] : `${owner}.github.io`;
+    return `https://github.com/${owner}/${repo}/actions/workflows/rankings-pages.yml`;
+  }
+
+  function renderUpdateLinks(ageSeconds) {
+    const url = repoWorkflowUrl();
+    const liveLink = $('#liveUpdateLink');
+    const footerLink = $('#actionsLink');
+    const banner = $('#staleBanner');
+    if (state.mode !== 'static' || !url) {
+      if (liveLink) liveLink.hidden = true;
+      if (footerLink) footerLink.hidden = true;
+      if (banner) banner.hidden = true;
+      return;
+    }
+    const stale = ageSeconds > 900;
+    if (liveLink) {
+      liveLink.href = url;
+      liveLink.hidden = !stale;
+    }
+    if (footerLink) {
+      footerLink.href = url;
+      footerLink.hidden = false;
+      footerLink.textContent = stale
+        ? `快照已 ${Math.round(ageSeconds / 60)} 分钟未更新 · 手动运行 Actions`
+        : '手动更新数据';
+      footerLink.classList.toggle('stale-link', stale);
+    }
+    if (banner) {
+      const showBanner = ageSeconds > 600;
+      banner.hidden = !showBanner;
+      if (showBanner) {
+        const age = $('#staleAge');
+        const action = $('#staleAction');
+        if (age) age.textContent = String(Math.max(1, Math.round(ageSeconds / 60)));
+        if (action) action.href = url;
+      }
+    }
+  }
+
   function updateLiveStatus() {
     const badge = $('#modeBadge');
+    const age = state.data && state.lastGenerated
+      ? Math.max(0, Math.round(Date.now() / 1000 - state.lastGenerated))
+      : 0;
     if (badge) {
       if (state.mode === 'static') {
-        const age = Math.max(0, Math.round(Date.now() / 1000 - (state.lastGenerated || 0)));
         badge.className = 'mode-badge static' + (age > 900 ? ' stale' : '');
         badge.textContent = 'GitHub Pages 快照';
       } else if (state.mode === 'local') {
@@ -158,6 +205,7 @@
         badge.textContent = '本地实时';
       }
     }
+    renderUpdateLinks(age);
     if (!state.connected) {
       if (state.mode === 'static' && !state.data) {
         setLive('offline', '等待 GitHub Actions 生成首个快照…');
