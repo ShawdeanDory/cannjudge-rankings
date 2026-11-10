@@ -4,7 +4,7 @@ Worker在`/api/snapshot`读取CANNJudge公开总榜及全部题榜分页，返�
 
 ## 部署
 
-在此目录运行`npm ci`，然后运行`npx wrangler login --scopes account:read user:read workers:write workers_scripts:write workers_routes:write`并在浏览器完成授权。凭据由Wrangler保存在项目之外。
+在此目录运行`npm ci`，然后运行`npx wrangler login --device --scopes account:read user:read workers:write workers_scripts:write workers_routes:write`并在浏览器完成授权。凭据由Wrangler保存在项目之外。
 
 运行`npm test`和`npx wrangler deploy --dry-run`。验证通过后运行`npm run deploy`。将部署返回的HTTPS地址写入`docs/config.js`的`window.CANNJUDGE_WORKER_URL`，例如`https://cannjudge-rankings-proxy.<账户子域>.workers.dev`。
 
@@ -14,4 +14,4 @@ Worker只接受固定快照路径的GET及OPTIONS请求，数据请求固定发�
 
 ## 验证记录
 
-2026年11月10日本地通过3项自动检查，覆盖分页合并、不完整分页拒绝更新、请求路径与方法及来源限制。真实CANNJudge接口验证取得595支队伍及10道题的完整榜单。Wrangler打包验证通过。线上部署与定时刷新须在Cloudflare登录授权后验证。
+2026年11月10日本地通过3项自动检查，覆盖分页合并、不完整分页拒绝更新、请求路径与方法及来源限制。真实CANNJudge接口验证取得595支队伍及10道题的完整榜单。Wrangler打包验证通过。Worker已部署，版本ID为`9481dcda-ee87-46b0-8ce5-99c352660b55`。公开地址为`https://cannjudge-rankings-proxy.cannjudge-rankings-proxy.workers.dev`。
