@@ -1,3 +1,4 @@
+import { buildSnapshot } from './snapshot-client.js?v=2';
 /* CANNJudge 实时排名监视器 —— 纯前端渲染逻辑 */
 (() => {
   'use strict';
@@ -623,11 +624,15 @@
   async function fetchPublicSnapshot(force) {
     if (WORKER_URL) {
       try {
-        const response = await fetch(WORKER_URL + '/api/snapshot', {
-          cache: 'no-store', signal: AbortSignal.timeout(45000),
+        const data = await buildSnapshot(async (path, params = {}) => {
+          const url = new URL(path, WORKER_URL);
+          url.search = new URLSearchParams(params).toString();
+          const response = await fetch(url, {
+            cache: 'no-store', signal: AbortSignal.timeout(20000),
+          });
+          if (!response.ok) throw new Error('Worker HTTP ' + response.status);
+          return response.json();
         });
-        if (!response.ok) throw new Error('Worker HTTP ' + response.status);
-        const data = await response.json();
         if (!data.ready || !data.total?.rows?.length || !data.problems?.length
             || !data.problems.every(p => data.by_problem?.[p.id]?.complete)) {
           throw new Error('Incomplete Worker response');
@@ -797,17 +802,10 @@
     applyModeChrome();
     await poll(true);
 
-    const schedule = () => {
-      const delay = state.mode === 'static'
-        ? (state.data ? STATIC_POLL_MS : 15000)
-        : POLL_MS;
-      setTimeout(async () => {
-        await poll(false);
-        updateLiveStatus();
-        schedule();
-      }, delay);
-    };
-    schedule();
+    setInterval(() => poll(false), state.mode === 'static' ? STATIC_POLL_MS : POLL_MS);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) poll(false);
+    });
   }
 
   if (document.readyState === 'loading') {

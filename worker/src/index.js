@@ -10,66 +10,25 @@ function reply(body, status = 200) {
   } });
 }
 
-export async function buildSnapshot(get) {
-  const [contest, problems, stats] = await Promise.all([
-    get(`/api/contests/${CONTEST}`),
-    get(`/api/problems/contest/${CONTEST}`),
-    get(`/api/submissions/contest/${CONTEST}/stats`),
-  ]);
-  if (!Array.isArray(problems) || !problems.length || !Array.isArray(stats)) {
-    throw new Error('Unexpected contest response');
-  }
-  const total = stats.map(item => ({
-    team: item.team?.team_name || item.team?.name || item.team?.team_id || '',
-    score: Number(Number(item.score || 0).toFixed(2)),
-    pass: Number(item.passCount || 0), attempt: Number(item.attemptCount || 0),
-    subs: Number(item.submissionCount || 0),
-  })).filter(row => row.team);
-  if (!total.length) throw new Error('Empty contest leaderboard');
-  total.sort((a, b) => b.score - a.score || b.pass - a.pass || a.subs - b.subs || a.team.localeCompare(b.team));
-  total.forEach((row, i) => { row.rank = i + 1; });
-  const entries = await Promise.all(problems.map(async problem => {
-    const path = `/api/problems/${problem._id}/ranking`;
-    const first = await get(path, { contestId: CONTEST, page: 1, size: 100 });
-    const pages = Number(first.pages || 1);
-    if (!Number.isInteger(pages) || pages < 1 || pages > 30) throw new Error('Invalid pagination');
-    const raw = [...(first.rows || [])];
-    for (let page = 2; page <= pages; page++) {
-      const chunk = await get(path, { contestId: CONTEST, page, size: 100 });
-      raw.push(...(chunk.rows || []));
-    }
-    const expected = Number(first.total || raw.length);
-    if (!raw.length || raw.length !== expected) throw new Error('Incomplete problem leaderboard');
-    const rows = raw.map((item, i) => ({
-      rank: Number(item.rank || i + 1),
-      team: item.team?.team_name || item.team?.name || item.team?.team_id || item.submitter?.nickname || item.user?.nickname || '未知队伍',
-      user: item.submitter?.nickname || item.user?.nickname || '',
-      score: Number(Number(item.score || 0).toFixed(2)),
-      status: item.status || item.submission?.status || '',
-      time: item.create_time || item.submission?.create_time || '',
-      sid: item.submission_id || item.submission?._id || '',
-    })).sort((a, b) => a.rank - b.rank);
-    return [problem._id, { rows, at: Date.now() / 1000, error: null, total: expected, complete: true }];
-  }));
-  const now = Date.now() / 1000;
-  return {
-    app: 'cannjudge-rank-monitor', app_version: '1.1.0', mode: 'worker', ready: true,
-    version: Date.now(), generated_at: now, server_time: now,
-    contest: { title: contest.title || '华为ICT大赛', name: 'ictcompetition', url: `${UPSTREAM}/public/ictcompetition` },
-    problems: problems.map(p => ({ id: p._id, name: p.name, title: p.title || p.name || p._id })),
-    total: { rows: total, at: now, error: null }, by_problem: Object.fromEntries(entries),
-  };
-}
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname !== '/api/snapshot') return reply({ error: 'Not found' }, 404);
+    const fixed = [`/api/contests/${CONTEST}`, `/api/problems/contest/${CONTEST}`, `/api/submissions/contest/${CONTEST}/stats`];
+    const rank = url.pathname.match(/^\/api\/problems\/([a-f0-9]{24})\/ranking$/);
+    const problemIds = new Set(['6ad9857c3ff2fef7e8fd34ab','6ad9878b3ff2fef7e8fe31c1','6ad9a6b63ff2fef7e80bf2ab','6ad9a82a3ff2fef7e80ca549','6ad9a9933ff2fef7e80d562e','6ad9ab403ff2fef7e80e2a1d','6ad9acd63ff2fef7e80ed46e','6ad9af1f3ff2fef7e80fec69','6ad9b1783ff2fef7e81136f2','6ad9b33d3ff2fef7e8129852']);
+    if (!fixed.includes(url.pathname) && !(rank && problemIds.has(rank[1]))) return reply({ error: 'Not found' }, 404);
+    const target = new URL(url.pathname, UPSTREAM);
+    if (rank) {
+      const page = Number(url.searchParams.get('page') || 1);
+      if (!Number.isInteger(page) || page < 1 || page > 30) return reply({ error: 'Invalid page' }, 400);
+      target.search = new URLSearchParams({ contestId: CONTEST, page, size: 100 });
+    }
     const origin = request.headers.get('Origin');
     if (origin && origin !== ORIGIN) return reply({ error: 'Origin not allowed' }, 403);
     if (request.method === 'OPTIONS') return reply({ ok: true });
     if (request.method !== 'GET') return reply({ error: 'Method not allowed' }, 405);
-    const cacheKey = new Request(`${url.origin}/api/snapshot`);
+    const cacheKey = new Request(new URL(target.pathname + target.search, url.origin));
     const cached = await caches.default.match(cacheKey);
     if (cached) {
       const response = new Response(cached.body, cached);
@@ -77,17 +36,17 @@ export default {
       return response;
     }
     try {
-      const snapshot = await buildSnapshot(async (path, params = {}) => {
-        const target = new URL(path, UPSTREAM);
-        target.search = new URLSearchParams(params).toString();
-        const response = await fetch(target, {
-          headers: { Accept: 'application/json', 'User-Agent': 'CANNJudgePublicRankings/1.1' },
-          signal: AbortSignal.timeout(20000),
-        });
-        if (!response.ok) throw new Error(`Upstream HTTP ${response.status}`);
-        return response.json();
+      const upstream = await fetch(target, {
+        headers: { Accept: 'application/json', 'User-Agent': 'CANNJudgePublicRankings/1.2' },
+        signal: AbortSignal.timeout(20000),
       });
-      const response = reply(snapshot);
+      if (!upstream.ok) return reply({ error: `Upstream HTTP ${upstream.status}` }, 502);
+      const response = new Response(upstream.body, { headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Access-Control-Allow-Origin': ORIGIN,
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Cache-Control': 'no-store',
+      } });
       const stored = response.clone();
       stored.headers.set('Cache-Control', 'public, max-age=60');
       ctx.waitUntil(caches.default.put(cacheKey, stored));

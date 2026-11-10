@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { buildSnapshot } from './index.js';
+import worker from './index.js';
+import { buildSnapshot } from '../../docs/snapshot-client.js';
 
 const makeRow = rank => ({ rank, team: { team_name: `team-${rank}` }, score: 100 - rank, submission: { status: 'Pass' } });
 
@@ -30,8 +31,8 @@ test('partial pagination fails instead of reporting a fresh complete snapshot', 
 
 test('accepts only the snapshot route and GET or OPTIONS', async () => {
   assert.equal((await worker.fetch(new Request('https://example.com/api/users/login'), {}, {})).status, 404);
-  assert.equal((await worker.fetch(new Request('https://example.com/api/snapshot', { method: 'POST' }), {}, {})).status, 405);
-  assert.equal((await worker.fetch(new Request('https://example.com/api/snapshot', { headers: { Origin: 'https://elsewhere.example' } }), {}, {})).status, 403);
-  const response = await worker.fetch(new Request('https://example.com/api/snapshot', { method: 'OPTIONS' }), {}, {});
+  assert.equal((await worker.fetch(new Request('https://example.com/api/contests/6a9e2d04bf41025d60f21804', { method: 'POST' }), {}, {})).status, 405);
+  assert.equal((await worker.fetch(new Request('https://example.com/api/contests/6a9e2d04bf41025d60f21804', { headers: { Origin: 'https://elsewhere.example' } }), {}, {})).status, 403);
+  const response = await worker.fetch(new Request('https://example.com/api/contests/6a9e2d04bf41025d60f21804', { method: 'OPTIONS' }), {}, {});
   assert.equal(response.headers.get('Access-Control-Allow-Origin'), 'https://shawdeandory.github.io');
 });
