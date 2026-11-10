@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark light">
   <title>CANNJudge 实时排名监视器</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
   <div class="ambient" aria-hidden="true"></div>
@@ -113,6 +113,31 @@
       <div class="panel-foot" id="totalFoot">–</div>
     </section>
 
+    <section class="panel" aria-labelledby="replayTitle">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2 id="replayTitle">历史峰值回放</h2>
+          <p id="replayMeta">正在读取公开成绩样本…</p>
+        </div>
+      </div>
+      <div class="table-scroll tall replay-scroll" id="replayTable" hidden>
+        <table class="rank-table">
+          <thead>
+            <tr>
+              <th scope="col">回放名次</th>
+              <th scope="col">队伍</th>
+              <th scope="col" class="num">当前总分</th>
+              <th scope="col" class="num">回放总分</th>
+              <th scope="col">已观测回退</th>
+              <th scope="col">单题反超门槛</th>
+            </tr>
+          </thead>
+          <tbody id="replayBody"></tbody>
+        </table>
+      </div>
+      <div class="panel-foot">回放保留查询队伍的当前提交，其余队伍逐题取公开峰值并重算第一名奖励。口径与分数会随采样变化。未公开的成绩无法估算。</div>
+    </section>
+
     <section class="panel" aria-labelledby="historyTitle">
       <div class="panel-head">
         <div class="panel-title">
@@ -154,6 +179,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="config.js?v=4"></script>
-  <script type="module" src="app.js?v=4"></script>
+  <script type="module" src="app.js?v=5"></script>
 </body>
 </html>

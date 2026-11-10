@@ -33,6 +33,7 @@ jobs:
         run: |
           mkdir -p _site
           cp docs/index.html docs/style.css docs/app.js docs/config.js docs/snapshot-client.js docs/favicon.svg _site/
+          cp docs/score-replay.js docs/score-peaks.json _site/
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

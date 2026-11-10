@@ -563,6 +563,10 @@ a:hover { text-decoration: underline; }
 .history-scroll ol { margin: 6px 0 0; padding: 0; list-style: none; max-height: 220px; overflow: auto; }
 .history-scroll li { padding: 3px 0; }
 .history-scroll time { color: var(--muted); }
+.replay-scroll td { vertical-align: top; }
+.replay-scroll summary { cursor: pointer; }
+.replay-scroll ul { margin: 5px 0; padding-left: 1.2em; white-space: normal; }
+.replay-scroll li small { display: block; color: var(--muted); }
 
 .panel-foot {
   padding: 10px 22px 14px;

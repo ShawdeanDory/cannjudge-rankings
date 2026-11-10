@@ -1,4 +1,5 @@
 import { buildSnapshot } from './snapshot-client.js?v=4';
+import { createArchive, encodeArchive, mergeArchive, observeSnapshot, replayScores } from './score-replay.js?v=1';
 /* CANNJudge 实时排名监视器 —— 纯前端渲染逻辑 */
 (() => {
   'use strict';
@@ -10,8 +11,11 @@ import { buildSnapshot } from './snapshot-client.js?v=4';
   const STORE_THEME = 'cannjudge.monitor.theme';
   const PAGE_CODE = 'LGY';
   const STORE_ACCESS = 'cannjudge.monitor.page-unlocked';
+  const STORE_PEAKS = 'cannjudge.monitor.score-peaks.v1';
   const POLL_MS = 3000;
   const STATIC_POLL_MS = 60000;
+  const scoreArchive = createArchive();
+  let archiveReady;
 
   const state = {
     mode: 'unknown',
@@ -557,6 +561,47 @@ import { buildSnapshot } from './snapshot-client.js?v=4';
     $('#problemCount').textContent = `${(state.data.problems || []).length} 道题`;
   }
 
+  async function loadScoreArchive() {
+    try { mergeArchive(scoreArchive, JSON.parse(localStorage.getItem(STORE_PEAKS))); } catch { /* optional storage */ }
+    try {
+      const response = await fetch('score-peaks.json', { signal: AbortSignal.timeout(8000) });
+      if (response.ok) mergeArchive(scoreArchive, await response.json());
+    } catch { /* continue with observed browser samples */ }
+  }
+
+  function renderReplay() {
+    const table = $('#replayTable');
+    const meta = $('#replayMeta');
+    const replay = replayScores(state.data, scoreArchive, myTeam());
+    table.hidden = !replay;
+    if (!replay) {
+      meta.textContent = '等待总榜、题目难度和完整题榜。';
+      return;
+    }
+    const { ranked, selected, ambiguousLeaders } = replay;
+    const flagged = ranked.filter(row => row.drops.length);
+    const coverage = [scoreArchive.firstAt, Math.min(scoreArchive.latestAt, state.data.generated_at)]
+      .map(at => fmtDayTime(at * 1000)).join(' 至 ');
+    const result = selected ? `${selected.team} 公开 #${selected.rank} · 回放 #${selected.replayRank} · ` : '';
+    meta.textContent = `${result}${flagged.length} 支队伍有已观测回退 · 样本覆盖 ${coverage}` +
+      (ambiguousLeaders ? ` · ${ambiguousLeaders} 道题的模拟榜首分数并列，奖励归属为估算` : '');
+    const body = $('#replayBody');
+    const open = new Set([...body.querySelectorAll('details[open]')].map(el => el.dataset.key));
+    const details = (key, label, items) => `<details data-key="${esc(key)}"${open.has(key) ? ' open' : ''}>
+      <summary>${label}</summary><ul>${items.join('')}</ul></details>`;
+    body.innerHTML = ranked.filter(row => row.replayRank <= 10 || row.drops.length || row === selected).map(row => {
+      const drops = row.drops.length ? details('drop:' + row.team, `${row.drops.length} 题`, row.drops.map(drop =>
+        `<li><b>${esc(drop.problem.title)}</b> ${fmtScore(drop.earlier.score / 100)} → ${fmtScore(drop.base / 100)}
+          <small>旧提交 ${fmtDayTime(drop.earlier.submittedAt)} · 新提交 ${fmtDayTime(drop.latest.time)} · 基础分差折合 ${fmtScore((drop.earlier.score - drop.base) * drop.weight / 100)} 分</small></li>`)) : '–';
+      const first = row.thresholds[0];
+      const thresholds = first ? details('threshold:' + row.team, `${esc(first.problem.title)} ${fmtScore(first.score / 100)}`,
+        row.thresholds.map(item => `<li>${esc(item.problem.title)} ≥ ${fmtScore(item.score / 100)} 基础分</li>`)) : '–';
+      return `<tr class="${row === selected ? 'me' : ''}">
+        <td>#${row.replayRank}</td><td>${esc(row.team)}</td><td class="num">${fmtScore(row.score)}</td>
+        <td class="num">${fmtScore(row.replay / 100)}</td><td>${drops}</td><td>${thresholds}</td></tr>`;
+    }).join('');
+  }
+
   function renderHistory() {
     const history = state.history;
     const table = $('#historyTable');
@@ -674,6 +719,9 @@ import { buildSnapshot } from './snapshot-client.js?v=4';
 
     renderTeamOptions();
     renderAll(first);
+    observeSnapshot(scoreArchive, data);
+    try { localStorage.setItem(STORE_PEAKS, JSON.stringify(encodeArchive(scoreArchive))); } catch { /* optional storage */ }
+    renderReplay();
     updateLiveStatus();
   }
 
@@ -704,10 +752,12 @@ import { buildSnapshot } from './snapshot-client.js?v=4';
     if (state.inflight || $('#dashboard').hidden) return;
     if (state.paused && !force) return;
     state.inflight = true;
+    archiveReady ??= loadScoreArchive();
     try {
       if (state.mode === 'static') {
         const data = await fetchOnlineSnapshot();
         if (data.version !== state.version) {
+          await archiveReady;
           applySnapshot(data);
         } else {
           state.connected = true;
@@ -727,6 +777,7 @@ import { buildSnapshot } from './snapshot-client.js?v=4';
           state.lastGenerated = data.generated_at;
           updateLiveStatus();
         } else {
+          await archiveReady;
           applySnapshot(data);
           renderHistory();
         }
@@ -776,6 +827,7 @@ import { buildSnapshot } from './snapshot-client.js?v=4';
       renderTeamOptions();
       renderAll();
       renderHistory();
+      renderReplay();
       toast(`已切换到队伍 ${value}`);
     }
     $('#teamSelect').addEventListener('change', event => selectTeam(event.target.value));
