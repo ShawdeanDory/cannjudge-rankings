@@ -36,3 +36,38 @@ test('accepts only the snapshot route and GET or OPTIONS', async () => {
   const response = await worker.fetch(new Request('https://example.com/api/contests/6a9e2d04bf41025d60f21804', { method: 'OPTIONS' }), {}, {});
   assert.equal(response.headers.get('Access-Control-Allow-Origin'), 'https://shawdeandory.github.io');
 });
+
+
+test('streams raw pages and caches each normalized pagination request', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  const raw = JSON.stringify({ rows: [{ team: { team_name: 'raw' } }], pages: 1 });
+  let calls = 0;
+  const store = new Map();
+  const pending = [];
+  globalThis.caches = { default: {
+    match: async key => store.get(key.url)?.clone(),
+    put: async (key, value) => { store.set(key.url, value); },
+  } };
+  globalThis.fetch = async url => {
+    calls++;
+    assert.equal(url.origin, 'https://cannjudge.cn');
+    assert.equal(url.searchParams.get('contestId'), '6a9e2d04bf41025d60f21804');
+    assert.equal(url.searchParams.get('size'), '100');
+    return new Response(raw);
+  };
+  try {
+    const request = new Request('https://worker.example/api/problems/6ad9857c3ff2fef7e8fd34ab/ranking?page=2&size=999');
+    const context = { waitUntil: promise => pending.push(promise) };
+    const first = await worker.fetch(request, {}, context);
+    assert.equal(await first.text(), raw);
+    await Promise.all(pending);
+    const cached = await worker.fetch(request, {}, context);
+    assert.equal(await cached.text(), raw);
+    assert.equal(cached.headers.get('Cache-Control'), 'no-store');
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.caches = originalCaches;
+  }
+});
