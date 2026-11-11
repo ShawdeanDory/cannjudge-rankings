@@ -427,15 +427,14 @@ import { ACTIVITY_LIMIT, emptyHistory, fiveHourBaseline, recordRanking } from '.
     grid.innerHTML = '';
     state.cards.clear();
 
-    problems.forEach((problem, index) => {
+    problems.forEach((problem) => {
       const card = document.createElement('article');
       card.className = 'panel prob-card';
       card.id = 'prob-' + problem.id;
       card.innerHTML = `
         <div class="prob-head">
           <div class="prob-title">
-            <h3><span class="prob-index">${String(index + 1).padStart(2, '0')}</span>${esc(problem.title)}${difficultyBadge(problem)}</h3>
-            <p class="prob-slug">${esc(problem.name)}</p>
+            <h3>${esc(problem.title)}${difficultyBadge(problem)}</h3>
           </div>
           <div class="my-chip none" data-role="mychip">
             <span class="lbl">查询队伍</span>
@@ -933,7 +932,8 @@ import { ACTIVITY_LIMIT, emptyHistory, fiveHourBaseline, recordRanking } from '.
       if (!problem) return;
       const target = document.getElementById('prob-' + problem.dataset.pid);
       if (!target) return;
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
       target.classList.add('target');
       setTimeout(() => target.classList.remove('target'), 1800);
     });
@@ -941,16 +941,16 @@ import { ACTIVITY_LIMIT, emptyHistory, fiveHourBaseline, recordRanking } from '.
     $('#quitBtn').addEventListener('click', async () => {
       if (!window.confirm('确定退出本地排名监视器吗？退出后此页面将无法继续刷新。')) return;
       try { await fetch('/api/shutdown', { method: 'POST' }); } catch (e) { /* ignore */ }
-      document.body.innerHTML = '<div style="display:grid;place-items:center;height:100vh;color:#8ea0c2;font:14px \'Microsoft YaHei\',sans-serif">监视器已退出，可以关闭此页面。</div>';
+      document.body.innerHTML = '<div style="display:grid;place-items:center;height:100vh;color:var(--muted)">监视器已退出，可以关闭此页面。</div>';
     });
   }
 
   async function init() {
-    let theme = 'dark';
+    let theme = 'light';
     let unlocked = false;
     try {
       state.paused = localStorage.getItem(STORE_PAUSED) === '1';
-      if (localStorage.getItem(STORE_THEME) === 'light') theme = 'light';
+      if (localStorage.getItem(STORE_THEME) === 'dark') theme = 'dark';
     } catch { /* optional preferences */ }
     try { unlocked = sessionStorage.getItem(STORE_ACCESS) === '1'; } catch { /* optional storage */ }
     setTheme(theme);
