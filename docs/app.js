@@ -66,7 +66,7 @@ import { ACTIVITY_LIMIT, emptyHistory, fiveHourBaseline, recordRanking } from '.
 
   function deltaMarkup(delta, label) {
     const direction = delta > 0 ? 'up' : delta < 0 ? 'down' : '';
-    const arrow = delta > 0 ? '▲ ' : delta < 0 ? '▼ ' : '';
+    const arrow = delta > 0 ? '▲ ' : delta < 0 ? '<span class="decline-arrow">▼</span> ' : '';
     return `<span class="score-delta ${direction}">${arrow}${label}</span>`;
   }
 
@@ -329,7 +329,7 @@ import { ACTIVITY_LIMIT, emptyHistory, fiveHourBaseline, recordRanking } from '.
       node.className = 'hero-delta ' + (improved ? 'up' : 'down');
       node.innerHTML = improved
         ? `<span>▲</span> 排名上升 ${delta} 位 <span class="hint">（上次 #${state.lastRank}）</span>`
-        : `<span>▼</span> 排名下降 ${Math.abs(delta)} 位 <span class="hint">（上次 #${state.lastRank}）</span>`;
+        : `<span class="decline-arrow">▼</span> 排名下降 ${Math.abs(delta)} 位 <span class="hint">（上次 #${state.lastRank}）</span>`;
       clearTimeout(state.deltaTimer);
       state.deltaTimer = setTimeout(() => {
         node.textContent = '';

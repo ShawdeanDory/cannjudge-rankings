@@ -23,6 +23,7 @@
   --positive-bg: #edf5ef;
   --negative-text: #a02848;
   --negative-bg: #fbe8ee;
+  --decline-arrow: #821c3c;
   --warning-text: #77501b;
   --warning-bg: #faf0df;
   --radius: 22px;
@@ -491,6 +492,14 @@ a:hover { text-decoration: underline; }
 .score-delta { font-variant-numeric: tabular-nums; font-weight: 650; }
 .score-delta.up { color: var(--positive-text); }
 .score-delta.down { color: var(--negative-text); }
+.decline-arrow { color: var(--decline-arrow); }
+[data-theme="dark"] .decline-arrow {
+  display: inline-block;
+  padding: 0.08em 0.22em;
+  border-radius: 3px;
+  background: var(--button);
+  line-height: 1;
+}
 .history-scroll { border-radius: 0 0 var(--radius) var(--radius); }
 .history-scroll th[scope="row"] { position: static; text-align: left; }
 .history-scroll td { min-width: 110px; vertical-align: top; }
